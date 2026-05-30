@@ -25,7 +25,7 @@ Quickstart:
 """
 from __future__ import annotations
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 GITHUB_URL = "https://github.com/HiroAlleyCat/wdgwars-api-tester"
 
 import argparse
@@ -382,6 +382,84 @@ def summary(results: list[Result]) -> dict:
 
 # ───────────────────────────── Baseline diff ─────────────────────────────────
 
+# ───────────────────────────── Telegram alerting ─────────────────────────────
+#
+# Optional, stdlib-only Telegram notifier. Posts to the Bot API on state
+# change in --watch mode. No dependency on any bridge, broker, or webhook
+# service — drop a bot token + chat id into the env and the tool pages itself.
+#
+# Create a bot via @BotFather to get a token. For chat_id: send a message
+# to the bot, then GET https://api.telegram.org/bot<TOKEN>/getUpdates and
+# read result[0].message.chat.id (positive integer for DMs, negative for
+# groups, -100... for channels).
+
+TELEGRAM_TEXT_LIMIT = 4096  # Telegram's per-message char cap
+TELEGRAM_DELTA_LIMIT = 30   # max delta lines included before truncation
+
+
+def _format_telegram_text(prev_overall: str, curr_overall: str,
+                           deltas: list[str], by_verdict: dict) -> str:
+    """Pure formatter for a Telegram alert body. Testable without HTTP."""
+    if curr_overall == "HEALTHY" and prev_overall != "HEALTHY":
+        prefix = "✅ wdgwars API recovered"
+    elif "SENTINEL-DIVERGED" in curr_overall:
+        prefix = "🔧 wdgwars-api-tester diagnostic broken"
+    else:
+        prefix = "🚨 wdgwars API " + curr_overall
+
+    lines = [f"<b>{prefix}</b>", f"<code>{prev_overall} → {curr_overall}</code>", ""]
+
+    if deltas:
+        lines.append("<b>probe deltas:</b>")
+        shown = deltas[:TELEGRAM_DELTA_LIMIT]
+        for d in shown:
+            lines.append(f"<code>{d}</code>")
+        if len(deltas) > TELEGRAM_DELTA_LIMIT:
+            lines.append(f"<i>… and {len(deltas) - TELEGRAM_DELTA_LIMIT} more</i>")
+        lines.append("")
+
+    if by_verdict:
+        counts = ", ".join(f"{k}={v}" for k, v in sorted(by_verdict.items()))
+        lines.append(f"<b>verdicts:</b> <code>{counts}</code>")
+
+    text = "\n".join(lines)
+    if len(text) > TELEGRAM_TEXT_LIMIT:
+        text = text[:TELEGRAM_TEXT_LIMIT - 20] + "\n<i>… truncated</i>"
+    return text
+
+
+def _post_telegram(token: str, chat_id: str, text: str,
+                    parse_mode: str = "HTML", timeout: float = 10.0) -> bool:
+    """POST a sendMessage to the Telegram Bot API. Returns True on 200."""
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = json.dumps({
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": parse_mode,
+        "disable_web_page_preview": True,
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        url, data=payload,
+        headers={"Content-Type": "application/json",
+                 "User-Agent": USER_AGENT},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status == 200
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read(512).decode("utf-8", errors="replace")
+        except Exception:
+            pass
+        log.warning("telegram post failed: HTTP %s %s", e.code, body[:200])
+        return False
+    except Exception as e:  # noqa: BLE001
+        log.warning("telegram post failed: %s", e)
+        return False
+
+
 def _probe_deltas(prev: list[Result], curr: list[Result]) -> list[str]:
     """Compact per-probe deltas between two result sets.
 
@@ -492,6 +570,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     p.add_argument("--baseline", type=Path,
                    help="Path to a baseline JSON file. If missing, written on first "
                    "run. If present, diffs are reported.")
+    p.add_argument("--alert-telegram", action="store_true",
+                   help="In --watch mode, also POST a Telegram message on every "
+                   "state change. Requires --telegram-bot-token (or env "
+                   "$TELEGRAM_BOT_TOKEN) and --telegram-chat-id (or env "
+                   "$TELEGRAM_CHAT_ID).")
+    p.add_argument("--telegram-bot-token",
+                   help="Override $TELEGRAM_BOT_TOKEN. Get one from @BotFather.")
+    p.add_argument("--telegram-chat-id",
+                   help="Override $TELEGRAM_CHAT_ID. Positive int for DMs, "
+                   "negative for groups, -100... for channels.")
     p.add_argument("--version", action="version", version=__version__)
     args = p.parse_args(argv)
 
@@ -511,6 +599,19 @@ def main(argv: Optional[list[str]] = None) -> int:
     # --quiet implies --no-table; it also suppresses --json.
     if args.quiet:
         args.no_table = True
+
+    # Resolve Telegram credentials once at startup so we fail fast.
+    tg_token = args.telegram_bot_token or os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    tg_chat_id = args.telegram_chat_id or os.environ.get("TELEGRAM_CHAT_ID", "")
+    if args.alert_telegram:
+        if not args.watch:
+            log.warning("--alert-telegram requires --watch; one-shot mode has "
+                        "no state to alert on. Ignoring.")
+            args.alert_telegram = False
+        elif not tg_token or not tg_chat_id:
+            log.warning("--alert-telegram set but TELEGRAM_BOT_TOKEN or "
+                        "TELEGRAM_CHAT_ID missing. Disabling.")
+            args.alert_telegram = False
 
     def one_pass() -> tuple[list[Result], dict, str]:
         results = run_once(hosts, variants, valid_key, args.timeout)
@@ -570,6 +671,12 @@ def main(argv: Optional[list[str]] = None) -> int:
                         emit(results, s)
                     elif args.quiet:
                         emit(results, s)
+                    if args.alert_telegram:
+                        text = _format_telegram_text(
+                            last_overall, overall, deltas, s["by_verdict"])
+                        ok = _post_telegram(tg_token, tg_chat_id, text)
+                        log.info("  telegram: %s",
+                                 "sent" if ok else "FAILED")
                 last_results = results
                 last_overall = overall
                 time.sleep(args.watch)

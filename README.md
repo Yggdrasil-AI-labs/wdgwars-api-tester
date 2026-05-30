@@ -36,6 +36,11 @@ python3 wdgwars_api_tester.py --watch 60
 
 # Snapshot once, then diff future runs against it
 python3 wdgwars_api_tester.py --baseline baseline.json
+
+# Watch + Telegram self-page on state change (no bridge needed)
+export TELEGRAM_BOT_TOKEN=123456:ABC...
+export TELEGRAM_CHAT_ID=-1001234567890
+python3 wdgwars_api_tester.py --watch 60 --alert-telegram
 ```
 
 ## API key
@@ -108,13 +113,46 @@ Cron example:
                                 --json >> /var/log/wdgwars/snapshots.jsonl
 ```
 
+## Telegram self-paging (optional)
+
+In `--watch` mode the tool can post directly to a Telegram chat on every state change. No external broker, webhook service, or alerting infrastructure required — stdlib `urllib` to the Bot API and a chat id.
+
+### Setup
+
+1. Talk to [@BotFather](https://t.me/BotFather) on Telegram and create a bot. Copy the token.
+2. Add the bot to the chat where you want alerts (DM, group, or channel).
+3. Send any message in that chat, then `GET https://api.telegram.org/bot<TOKEN>/getUpdates` and read `result[0].message.chat.id` (or `result[0].channel_post.chat.id` for channels).
+4. Export both values and pass `--alert-telegram`:
+
+```bash
+export TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
+export TELEGRAM_CHAT_ID=-1001234567890
+python3 wdgwars_api_tester.py --watch 60 --alert-telegram
+```
+
+Or pass them inline: `--telegram-bot-token <token> --telegram-chat-id <id>`.
+
+### Message format
+
+| Transition | Header |
+|---|---|
+| Recovery (`* → HEALTHY`) | `✅ wdgwars API recovered` |
+| Diagnostic broken (`+SENTINEL-DIVERGED` appears) | `🔧 wdgwars-api-tester diagnostic broken` |
+| Regression (anything else worse) | `🚨 wdgwars API <new-overall>` |
+
+Body includes the `prev_overall → curr_overall` transition, per-probe deltas (capped at 30 lines for Telegram's 4096-char message limit), and a verdict count rollup. Uses HTML parse mode so `<b>` / `<code>` render correctly.
+
+### Failure handling
+
+Telegram post failures (network blip, invalid token, banned bot) log a warning to stderr but never crash the watch loop. The tool keeps polling and pages on the next transition.
+
 ## Tests
 
 ```
 python3 -m unittest test_wdgwars_api_tester
 ```
 
-22 tests, no network, stdlib only. Covers verdict annotation, quorum sentinel logic, state signature stability, summary rollup, and probe delta detection.
+28 tests, no network, stdlib only. Covers verdict annotation, quorum sentinel logic, state signature stability, summary rollup, probe delta detection, and Telegram message formatting.
 
 ## Related
 

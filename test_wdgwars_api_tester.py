@@ -12,7 +12,10 @@ import unittest
 from wdgwars_api_tester import (
     Result,
     SENTINEL_PROBES,
+    TELEGRAM_DELTA_LIMIT,
+    TELEGRAM_TEXT_LIMIT,
     _canonical_sentinel,
+    _format_telegram_text,
     _probe_deltas,
     annotate_verdicts,
     state_signature,
@@ -270,6 +273,61 @@ class TestProbeDeltas(unittest.TestCase):
         annotate_verdicts(r2)
         deltas = _probe_deltas(r1, r2)
         self.assertTrue(any("brand-new" in d and "NEW ->" in d for d in deltas))
+
+
+class TestTelegramFormatter(unittest.TestCase):
+    def test_regression_uses_alarm_prefix(self):
+        text = _format_telegram_text(
+            "HEALTHY", "OUTAGE+LEAK",
+            ["wdgwars.pl me/valid    OK/200 -> DEAD/404"],
+            {"DEAD": 10, "LEAK": 1, "OK": 1},
+        )
+        self.assertIn("🚨", text)
+        self.assertIn("OUTAGE+LEAK", text)
+        self.assertIn("HEALTHY → OUTAGE+LEAK", text)
+        self.assertIn("DEAD=10", text)
+
+    def test_recovery_uses_checkmark_prefix(self):
+        text = _format_telegram_text(
+            "OUTAGE+LEAK", "HEALTHY",
+            ["wdgwars.pl me/valid    DEAD/404 -> OK/200"],
+            {"OK": 11, "AUTH-REQUIRED": 4},
+        )
+        self.assertIn("✅", text)
+        self.assertIn("recovered", text)
+        self.assertNotIn("🚨", text)
+        self.assertNotIn("🔧", text)
+
+    def test_sentinel_diverged_uses_wrench_prefix(self):
+        text = _format_telegram_text(
+            "DEGRADED+LEAK", "DEGRADED+LEAK+SENTINEL-DIVERGED",
+            [],
+            {"DEAD": 5, "LEAK": 1, "SENTINEL-DIVERGED": 3},
+        )
+        self.assertIn("🔧", text)
+        self.assertIn("diagnostic broken", text)
+        self.assertNotIn("🚨", text)
+
+    def test_long_delta_list_truncated(self):
+        deltas = [f"line-{i}" for i in range(TELEGRAM_DELTA_LIMIT + 10)]
+        text = _format_telegram_text("HEALTHY", "DEGRADED", deltas, {})
+        self.assertIn(f"… and 10 more", text)
+        # Only first N delta lines included
+        self.assertIn("line-0", text)
+        self.assertIn(f"line-{TELEGRAM_DELTA_LIMIT - 1}", text)
+        self.assertNotIn(f"line-{TELEGRAM_DELTA_LIMIT}</code>", text)
+
+    def test_overall_length_capped_at_telegram_limit(self):
+        # Force a giant verdicts dict to trigger truncation.
+        big_verdicts = {f"VERDICT_{i}": i for i in range(1000)}
+        text = _format_telegram_text("HEALTHY", "DEGRADED", [], big_verdicts)
+        self.assertLessEqual(len(text), TELEGRAM_TEXT_LIMIT)
+
+    def test_html_tags_used_for_formatting(self):
+        text = _format_telegram_text("HEALTHY", "DEGRADED", ["foo"], {"OK": 1})
+        # Telegram HTML parse_mode requires <b>, <code>, <i>.
+        self.assertIn("<b>", text)
+        self.assertIn("<code>", text)
 
 
 if __name__ == "__main__":
