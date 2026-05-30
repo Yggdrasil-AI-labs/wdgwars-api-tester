@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Lab-only operational glue (lives on the deploy host, not in the public repo)
+lab/
+
+# Local snapshots, baselines, and ad-hoc test output
+*.jsonl
+baseline.json
+snapshots/
