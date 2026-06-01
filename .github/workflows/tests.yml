@@ -1,0 +1,43 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Syntax + import
+        run: |
+          python -c "import ast; ast.parse(open('wdgwars_api_tester.py').read()); print('parse OK')"
+          python -c "import wdgwars_api_tester; print('import OK')"
+
+      - name: Unit tests
+        # Stdlib-only — no `pip install` needed. Mock server is in
+        # mock_wdgwars.py, no live network or real key required.
+        run: python -m unittest discover -s . -p "test_*.py" -v
+
+      - name: Integration tests (against the in-process mock)
+        # Separate file so it doesn't clutter the unit-test discovery
+        # but still runs every push. The integration suite spins up
+        # mock_wdgwars.py on a localhost port and exercises the
+        # probes end-to-end.
+        run: python -m unittest integration_test -v
+
+      - name: Smoke-test CLI (--help)
+        run: python wdgwars_api_tester.py --help | head -5
