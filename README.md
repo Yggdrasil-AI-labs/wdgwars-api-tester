@@ -301,6 +301,21 @@ python3 wdgwars_api_tester.py --hosts http://127.0.0.1:9999 --variants none,garb
 
 Available scenarios: `outage`, `healthy`, `partial`, `diverged`.
 
+## Updating
+
+Stdlib-only, so updating just refreshes the single `.py` file from `main`:
+
+```bash
+./update.sh           # Linux / Mac
+update.bat            # Windows (double-click)
+```
+
+Or by hand:
+
+```bash
+curl -O https://raw.githubusercontent.com/HiroAlleyCat/wdgwars-api-tester/main/wdgwars_api_tester.py
+```
+
 ## Related
 
 - [wigle-to-wdgwars](https://github.com/HiroAlleyCat/wigle-to-wdgwars) — WiFi/BLE CSV uploader.
