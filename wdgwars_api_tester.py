@@ -25,10 +25,11 @@ Quickstart:
 """
 from __future__ import annotations
 
-__version__ = "0.6.3"
+__version__ = "0.7.0"
 GITHUB_URL = "https://github.com/HiroAlleyCat/wdgwars-api-tester"
 
 import argparse
+import datetime
 import hashlib
 import io
 import json
@@ -906,6 +907,55 @@ def load_key(cli_key: Optional[str]) -> Optional[str]:
     return None
 
 
+# ───────────────────────── Outage-aware backoff ──────────────────────────────
+#
+# In --watch mode, when LOCOSP is at a daily-cap / global-outage state, every
+# probe in our sweep starts returning 429 or status=0 (connection error). The
+# default behavior is to keep sweeping at the operator-chosen cadence, which
+# (a) pollutes the baseline with all-429 sweeps and (b) makes us a measurable
+# contributor to whatever quota is being burned. The fix: when a sweep looks
+# like an outage by share of bad verdicts, extend the sleep before the next
+# sweep. Resets to normal cadence on the first clean sweep.
+
+OUTAGE_VERDICT_TAGS = {"ERROR", "429"}
+
+
+def _outage_share(results: list[Result]) -> float:
+    """Fraction of results carrying a 429 or transport-error verdict."""
+    if not results:
+        return 0.0
+    bad = sum(
+        1 for r in results
+        if r.verdict in OUTAGE_VERDICT_TAGS or r.status == 429
+    )
+    return bad / len(results)
+
+
+def _seconds_to_next_midnight_utc(now: Optional[float] = None) -> float:
+    """Seconds from `now` (epoch) to next 00:00:00 UTC. Min 60s for safety."""
+    if now is None:
+        now = time.time()
+    dt = datetime.datetime.fromtimestamp(now, tz=datetime.timezone.utc)
+    nxt = (dt + datetime.timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    return max(60.0, (nxt - dt).total_seconds())
+
+
+def _backoff_sleep_seconds(base: float, streak: int,
+                            cap_seconds: float,
+                            now: Optional[float] = None) -> float:
+    """Sleep duration for the Nth consecutive outage sweep.
+
+    Doubles per consecutive outage sweep up to 32x base, then clamps at the
+    smaller of `cap_seconds` and the time-until-next-midnight-UTC (since
+    LOCOSP's documented daily quota resets at midnight UTC).
+    """
+    multiplier = 2 ** min(max(streak, 1), 5)  # 2,4,8,16,32
+    proposed = base * multiplier
+    midnight = _seconds_to_next_midnight_utc(now)
+    return max(base, min(proposed, cap_seconds, midnight))
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     p = argparse.ArgumentParser(
         prog="wdgwars-api-tester",
@@ -960,6 +1010,16 @@ def main(argv: Optional[list[str]] = None) -> int:
                    "WDGWARS_PREV_OVERALL, WDGWARS_DELTAS (newline-joined), "
                    "WDGWARS_VERDICTS (JSON), WDGWARS_RECOVERY (1/0), "
                    "WDGWARS_KIND (recovery|regression|diagnostic-broken).")
+    p.add_argument("--outage-backoff-threshold", type=float, default=0.30,
+                   help="In --watch mode, if at least this fraction of sweep "
+                   "results are verdict=429 or verdict=ERROR (status=0), "
+                   "treat the sweep as an LOCOSP-side outage and extend the "
+                   "next sleep. Default 0.30. Set 1.01 to disable.")
+    p.add_argument("--outage-backoff-cap-seconds", type=float, default=3600.0,
+                   help="In --watch mode, maximum sleep when in outage "
+                   "backoff. Capped further by time-to-next-midnight-UTC "
+                   "since LOCOSP's documented daily quota resets at 00:00 "
+                   "UTC. Default 3600 (1h).")
     p.add_argument("--version", action="version", version=__version__)
     args = p.parse_args(argv)
 
@@ -1038,7 +1098,12 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.watch and args.watch > 0:
         last_results: Optional[list[Result]] = None
         last_overall: str = ""
+        outage_streak: int = 0
         log.info("watch mode: polling every %.0fs, printing on change", args.watch)
+        log.info("outage backoff: threshold=%.0f%% bad-verdicts, cap=%.0fs "
+                 "(also capped at next midnight UTC)",
+                 args.outage_backoff_threshold * 100.0,
+                 args.outage_backoff_cap_seconds)
         try:
             while True:
                 results, s, _sig = one_pass()
@@ -1086,7 +1151,33 @@ def main(argv: Optional[list[str]] = None) -> int:
                                  "ok" if ok else "FAILED")
                 last_results = results
                 last_overall = overall
-                time.sleep(args.watch)
+
+                # Outage-aware backoff: if a meaningful share of this sweep
+                # came back 429 or transport-error, the LOCOSP daily quota
+                # (or a per-IP CF limit) is likely tripped. Don't keep
+                # hammering — extend sleep up to the next-midnight-UTC reset
+                # point. Resets the streak on the first clean sweep.
+                share = _outage_share(results)
+                if share >= args.outage_backoff_threshold:
+                    outage_streak += 1
+                    sleep_for = _backoff_sleep_seconds(
+                        args.watch, outage_streak,
+                        args.outage_backoff_cap_seconds)
+                    midnight = _seconds_to_next_midnight_utc()
+                    log.info(
+                        "outage-backoff: %.0f%% bad-verdicts (>=%.0f%%); "
+                        "sleeping %.0fs [streak=%d, midnight-utc=%.0fs]",
+                        share * 100.0,
+                        args.outage_backoff_threshold * 100.0,
+                        sleep_for, outage_streak, midnight)
+                    time.sleep(sleep_for)
+                else:
+                    if outage_streak > 0:
+                        log.info(
+                            "outage-backoff: clear (%.0f%% bad); "
+                            "resuming normal cadence", share * 100.0)
+                    outage_streak = 0
+                    time.sleep(args.watch)
         except KeyboardInterrupt:
             return 0
 

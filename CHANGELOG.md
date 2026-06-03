@@ -5,6 +5,54 @@ All notable changes to `wdgwars-api-tester`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-06-03 — Outage-aware backoff in `--watch` mode
+
+`--watch` mode now detects LOCOSP-side outage (daily cap, per-IP rate
+limit, or transport-level failure) and progressively extends the
+inter-sweep sleep instead of hammering through the outage at the
+operator-chosen cadence. Resets to normal cadence on the first clean
+sweep. Triggered live by the 2026-06-03 outage when LOCOSP's documented
+midnight-UTC daily quota tripped and the wider player base lost map
+rendering + biscuit uploads.
+
+### Added
+
+- `--outage-backoff-threshold FLOAT` (default `0.30`): if at least this
+  fraction of a sweep's results are `verdict=429` or `verdict=ERROR`
+  (`status=0` transport failure), the next sleep is extended. Set
+  `1.01` to disable the feature entirely.
+- `--outage-backoff-cap-seconds FLOAT` (default `3600.0`): maximum
+  sleep when in backoff. Capped further by time-to-next-midnight-UTC,
+  since LOCOSP's daily quota documentedly resets at 00:00 UTC — no
+  point sleeping past it.
+- Three new public-ish helpers (importable for tests / external use):
+  `_outage_share`, `_seconds_to_next_midnight_utc`,
+  `_backoff_sleep_seconds`. Plus module-level constant
+  `OUTAGE_VERDICT_TAGS = {"ERROR", "429"}` so the verdict set the
+  feature treats as outage signal is one obvious source of truth.
+- `test_outage_backoff.py`: 21 new unit tests covering threshold
+  detection, midnight-UTC math (incl. edge cases at exactly midnight
+  and one minute before), and the backoff sleep schedule (doubling,
+  cap clamping, midnight clamping, never-below-base safety).
+
+### Behavior
+
+Streak doubles per consecutive outage sweep: `2x, 4x, 8x, 16x, 32x`
+base, capping at the smaller of `--outage-backoff-cap-seconds` and
+time-to-next-midnight-UTC. The streak resets to 0 on the first clean
+sweep, with a log line announcing recovery. `DEAD`, `AUTH-REQUIRED`,
+`AUTH-REDIRECT`, and other expected non-OK verdicts do NOT count
+toward the outage share — only `429` and `ERROR` (transport-level).
+
+### Why now
+
+Triggered by a real 2026-06-03 incident where the WDGoWars API hit its
+global daily cap (confirmed in Discord by WDGW staff: "The API is at
+it's daily limit again. It'll reset at midnight UTC"). During the
+~5-hour outage, this tool kept sweeping every 30 minutes, contributing
+non-zero traffic to a quota that was already burned and producing only
+all-429 noise. The feature is the structured fix.
+
 ## [0.6.3] — 2026-06-03 — Security Notes catch-up
 
 Pure documentation release. Brings the family's documented security

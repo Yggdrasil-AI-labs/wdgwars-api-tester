@@ -143,6 +143,24 @@ Cron example:
                                 --json >> /var/log/wdgwars/snapshots.jsonl
 ```
 
+## Outage-aware backoff
+
+When LOCOSP is at its documented daily cap (resets midnight UTC), per-IP rate-limited, or transport-failing, `--watch` mode detects the outage by share of bad verdicts (`429` or `ERROR`) and progressively extends the sleep between sweeps instead of pushing through at full cadence. Resets to normal cadence on the first clean sweep.
+
+Default: trigger when ≥30% of a sweep is `429`/`ERROR`. Sleep doubles per consecutive outage sweep (2×, 4×, 8×, 16×, 32× of `--watch`), clamped at `--outage-backoff-cap-seconds` (default 3600s) **and** at time-to-next-midnight-UTC.
+
+```bash
+# disable feature entirely
+python3 wdgwars_api_tester.py --watch 1800 --outage-backoff-threshold 1.01
+
+# more aggressive: back off as soon as 10% of sweep is bad, sleep up to 4h
+python3 wdgwars_api_tester.py --watch 1800 \
+  --outage-backoff-threshold 0.10 \
+  --outage-backoff-cap-seconds 14400
+```
+
+`DEAD`, `AUTH-REQUIRED`, `AUTH-REDIRECT`, and other expected non-OK verdicts do NOT count toward the outage share — only `429` and transport-level `ERROR` do.
+
 ## Notification channels
 
 `--watch` mode supports three independent notification paths. Use one, two, or all three at once — they don't conflict.
