@@ -25,7 +25,7 @@ Quickstart:
 """
 from __future__ import annotations
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 GITHUB_URL = "https://github.com/HiroAlleyCat/wdgwars-api-tester"
 
 import argparse
@@ -131,13 +131,38 @@ def _csv_probe_body() -> tuple[bytes, str]:
     return body.getvalue(), f"multipart/form-data; boundary={boundary}"
 
 
-def build_probes() -> list[Probe]:
+def build_probes(team_id: int = 1) -> list[Probe]:
+    """Build the probe list. ``team_id`` selects which numeric gang id to
+    probe on ``/api/team/{id}`` — defaults to 1 (typically the founder gang
+    on any healthy instance). Override via ``--team-id`` for forks/staging.
+    """
     csv_body, csv_ct = _csv_probe_body()
     return [
         Probe("api-root", "GET", "/api/", False, (200, 301, 302, 404),
               notes="Used as baseline for /api/ subtree shape."),
         Probe("me", "GET", "/api/me", True, (200,),
-              notes="Auth + identity. With no/garbage key expect 401, not 404."),
+              notes="Auth + identity. With no/garbage key expect 401, not 404. "
+                    "Since 2026-06-03 the response also carries `your_rank` "
+                    "(top_n=100, nulls for >N) and `recent_captures` (≤20 "
+                    "attacker-side). Body shape isn't asserted by the tester "
+                    "— OK status is the contract — but a regression that "
+                    "drops them would still surface via downstream consumers."),
+        Probe("badge-catalog", "GET", "/api/badge-catalog", True, (200,),
+              notes="Curated public badge dictionary (~51 entries). Shipped "
+                    "2026-06-03. 24h server cache. Response: "
+                    "{ok, count, categories, badges:[{id, label, category, criteria}]}."),
+        Probe("team-id", "GET", f"/api/team/{team_id}", True, (200,),
+              notes=f"Public team dossier for gang id {team_id}. Top-level "
+                    "{id, name, color, rank, created_at, members[]}. The /me "
+                    "variant currently 524s (origin timeout) post-CF-Transform "
+                    "fix — see team-me probe."),
+        Probe("team-me", "GET", "/api/team/me", True, (200,),
+              notes="Caller's-own team dossier. Was 400 'usage' pre-2026-06-03, "
+                    "fix accepted both /api/ and /endpoint/ prefixes but "
+                    "/me variant now returns CF 524 (origin timeout). "
+                    "Probe accepts 200 — a 524 surfaces as the verdict so "
+                    "the upstream bug stays visible until LOCOSP ships the "
+                    "/me-side fix."),
         Probe("upload-history", "GET", "/api/upload-history?limit=5", True, (200,),
               notes="Added 2026-04-27 per /changelog."),
         Probe("upload-csv", "POST", "/api/upload-csv", True, (200, 400),
@@ -165,6 +190,25 @@ def build_probes() -> list[Probe]:
         Probe("member-territories", "GET", "/api/member-territories", True, (200,),
               notes="Cell-based grid (0.02° × 0.03° squares) + grid-traced "
                     "gang hulls. 5-min cron snapshot."),
+        Probe("member-territories-compact",
+              "GET", "/api/member-territories?compact=1", True, (200,),
+              notes="Compact variant shipped 2026-06-03. Strips gang/color/"
+                    "logo per-cell and per-hull; adds top-level `gangs` "
+                    "lookup keyed by gang_id. Cuts payload ~20-30%."),
+        Probe("member-territories-bbox",
+              "GET",
+              "/api/member-territories?compact=1&bbox=-82,41,-81,42&zoom=8",
+              True, (200,),
+              notes="Server-side spatial filter shipped 2026-06-03. Accepts "
+                    "Leaflet bounds.toBBoxString() (W,S,E,N) or "
+                    "min_lat,min_lng,max_lat,max_lng. Response echoes parsed "
+                    "bbox in [S,W,N,E] order. Probe uses a NE-Ohio window "
+                    "around the operator's Lorain coordinates."),
+        Probe("member-territories-zoom-skip",
+              "GET", "/api/member-territories?zoom=5", True, (200,),
+              notes="At zoom<6 server returns gang_hulls only with "
+                    "zoom_skipped_cells:true + empty cells[]. Shipped "
+                    "2026-06-03 for low-zoom map render perf."),
         Probe("leaderboard", "GET", "/api/leaderboard", True, (200,),
               notes="5 boards (today/week/all_time/gangs/hunters), top 25 "
                     "each. 5-min cron snapshot."),
@@ -468,8 +512,8 @@ def _request(probe: Probe, host: str, auth: str, valid_key: Optional[str],
 
 
 def run_once(hosts: list[str], variants: tuple, valid_key: Optional[str],
-             timeout: float) -> list[Result]:
-    probes = build_probes()
+             timeout: float, team_id: int = 1) -> list[Result]:
+    probes = build_probes(team_id=team_id)
     results: list[Result] = []
     for host in hosts:
         for probe in probes:
@@ -973,6 +1017,11 @@ def main(argv: Optional[list[str]] = None) -> int:
                    "$WDGWARS_API_KEY then ~/.config/wigle-to-wdgwars/wdgwars.key.")
     p.add_argument("--timeout", type=float, default=15.0,
                    help="Per-request timeout in seconds (default 15).")
+    p.add_argument("--team-id", type=int, default=1,
+                   help="Numeric gang id for the /api/team/{id} probe (default "
+                   "1). Override when probing a fork/staging instance where "
+                   "id 1 doesn't exist, or to vary the probed team between "
+                   "runs.")
     p.add_argument("--json", action="store_true",
                    help="Emit JSON results to stdout. Table still goes to stderr.")
     p.add_argument("--no-table", action="store_true",
@@ -1069,7 +1118,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         args.exec_on_change = None
 
     def one_pass() -> tuple[list[Result], dict, str]:
-        results = run_once(hosts, variants, valid_key, args.timeout)
+        results = run_once(hosts, variants, valid_key, args.timeout,
+                           team_id=args.team_id)
         s = summary(results)
         sig = state_signature(results)
         return results, s, sig

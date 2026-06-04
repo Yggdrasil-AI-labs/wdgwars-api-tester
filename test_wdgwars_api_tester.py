@@ -19,6 +19,7 @@ from wdgwars_api_tester import (
     _format_webhook_payload,
     _probe_deltas,
     annotate_verdicts,
+    build_probes,
     state_signature,
     summary,
 )
@@ -457,6 +458,71 @@ class TestWebhookFormatter(unittest.TestCase):
         self.assertIn("✅", _format_webhook_payload("DEGRADED", "HEALTHY", [], {})["title"])
         self.assertIn("🔧", _format_webhook_payload("DEGRADED", "DEGRADED+SENTINEL-DIVERGED", [], {})["title"])
         self.assertIn("🚨", _format_webhook_payload("HEALTHY", "OUTAGE", [], {})["title"])
+
+
+class TestBuildProbes2026_06_03Surface(unittest.TestCase):
+    """Coverage for the 2026-06-03 LOCOSP-shipped probes (v0.8.0).
+
+    These tests are pure-logic — they assert the probe list shape and the
+    ``team_id`` parameterization without touching the network.
+    """
+
+    NEW_PROBES_2026_06_03 = (
+        "badge-catalog",
+        "team-id",
+        "team-me",
+        "member-territories-compact",
+        "member-territories-bbox",
+        "member-territories-zoom-skip",
+    )
+
+    def test_all_new_probes_present_in_default_list(self):
+        names = {p.name for p in build_probes()}
+        for n in self.NEW_PROBES_2026_06_03:
+            self.assertIn(n, names, f"probe {n!r} missing from default build_probes()")
+
+    def test_team_id_default_is_1(self):
+        probes = {p.name: p for p in build_probes()}
+        self.assertEqual(probes["team-id"].path, "/api/team/1")
+
+    def test_team_id_override_threads_into_probe_path(self):
+        probes = {p.name: p for p in build_probes(team_id=20)}
+        self.assertEqual(probes["team-id"].path, "/api/team/20")
+
+    def test_team_id_override_does_not_affect_other_probes(self):
+        default = {p.name: p.path for p in build_probes()}
+        overridden = {p.name: p.path for p in build_probes(team_id=999)}
+        # Every probe except team-id and the random sentinels (which embed a
+        # per-build secrets.token_hex(8) cache-buster) should have an
+        # identical path.
+        random_probes = set(SENTINEL_PROBES) | {"non-api-sentinel-404"}
+        for name in default:
+            if name == "team-id" or name in random_probes:
+                continue
+            self.assertEqual(
+                default[name], overridden[name],
+                f"probe {name!r} path drifted when team_id changed",
+            )
+
+    def test_new_probes_all_require_auth(self):
+        # The 2026-06-03 surface is all key-gated. If LOCOSP ever opens any
+        # of these to anonymous reads, the probe should be re-evaluated.
+        probes = {p.name: p for p in build_probes()}
+        for n in self.NEW_PROBES_2026_06_03:
+            self.assertTrue(
+                probes[n].needs_auth,
+                f"probe {n!r} unexpectedly does not require auth",
+            )
+
+    def test_map_variant_probes_target_member_territories(self):
+        probes = {p.name: p for p in build_probes()}
+        for n in ("member-territories-compact",
+                  "member-territories-bbox",
+                  "member-territories-zoom-skip"):
+            self.assertIn(
+                "/api/member-territories", probes[n].path,
+                f"probe {n!r} should target /api/member-territories, got {probes[n].path!r}",
+            )
 
 
 if __name__ == "__main__":
