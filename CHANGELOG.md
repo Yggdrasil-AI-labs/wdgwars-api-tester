@@ -5,6 +5,50 @@ All notable changes to `wdgwars-api-tester`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2026-06-03 — Probes for the 2026-06-03 LOCOSP-shipped surface
+
+Six new probes covering the API additions LOCOSP shipped on 2026-06-03 in
+response to the bug + perf writeups. The probes give LOCOSP the usage data
+he asked for before committing to the next tier of map-perf work (vector
+tiles / PMTiles), and pin contract regressions on the new endpoints.
+
+### Added
+
+- `badge-catalog` probe — `GET /api/badge-catalog`. Curated 51-badge
+  dictionary, 24h server cache. Response shape:
+  `{ok, count, categories, badges:[{id, label, category, criteria}]}`.
+- `team-id` probe — `GET /api/team/{id}` with `id` configurable via the
+  new `--team-id` CLI flag (default `1`). Top-level shape:
+  `{id, name, color, rank, created_at, members[]}`.
+- `team-me` probe — `GET /api/team/me`. The 400 "usage" error from
+  2026-06-03 morning was fixed in LOCOSP's CF-Transform-Rule batch, but
+  the `/me` variant currently 524s (CF origin timeout). Probe accepts
+  200 so the upstream timeout surfaces as a `524` verdict until fully
+  shipped.
+- `member-territories-compact` probe — `GET /api/member-territories?compact=1`.
+  Strips redundant `gang/color/logo` from every row; adds top-level
+  `gangs` lookup keyed by `gang_id`. Cuts payload ~20-30%.
+- `member-territories-bbox` probe — `GET /api/member-territories?compact=1&bbox=W,S,E,N&zoom=8`.
+  Server-side spatial filter. Accepts Leaflet `bounds.toBBoxString()`
+  format. Probe uses a NE-Ohio window.
+- `member-territories-zoom-skip` probe — `GET /api/member-territories?zoom=5`.
+  At zoom<6 the server returns `gang_hulls` only with
+  `zoom_skipped_cells:true` and an empty `cells[]`. Verifies the
+  low-zoom render-perf path.
+- `--team-id INT` CLI flag (default `1`) for the `team-id` probe.
+  Override when probing a fork/staging instance where id 1 doesn't
+  exist, or to vary the probed team across runs.
+
+### Tests
+
+- Six new unit tests (`TestBuildProbes2026_06_03Surface` in
+  `test_wdgwars_api_tester.py`) covering: every new probe is present
+  in the default probe list; `team_id` defaults to `1`; the override
+  flows into `team-id`'s path; other probes' paths are stable across
+  `team_id` changes; every new probe requires auth (the 2026-06-03
+  surface is fully key-gated); the three map-variant probes target
+  `/api/member-territories`.
+
 ## [0.7.0] — 2026-06-03 — Outage-aware backoff in `--watch` mode
 
 `--watch` mode now detects LOCOSP-side outage (daily cap, per-IP rate
