@@ -25,7 +25,7 @@ Quickstart:
 """
 from __future__ import annotations
 
-__version__ = "0.10.1"
+__version__ = "0.11.0"
 GITHUB_URL = "https://github.com/HiroAlleyCat/wdgwars-api-tester"
 
 import argparse
@@ -135,6 +135,21 @@ def build_probes(team_id: int = 1) -> list[Probe]:
     """Build the probe list. ``team_id`` selects which numeric gang id to
     probe on ``/api/team/{id}`` — defaults to 1 (typically the founder gang
     on any healthy instance). Override via ``--team-id`` for forks/staging.
+
+    State-mutating endpoints intentionally NOT probed (would change real
+    game/account state on hits to production wdgwars.pl):
+
+    * ``POST /api/auth/login`` — issues a fresh device-bound API key row.
+    * ``POST /api/bounties/{id}/accept`` — claims a bounty.
+    * ``POST /api/shop/buy`` — purchases an item.
+    * ``POST /api/shop/activate/{id}`` — activates a purchased item.
+      Same CF-Transform/REQUEST_URI regex bug as the original five handlers
+      and bounties.php; fixed 2026-06-04 in the same pass. Confirmed as a
+      bound route by LOCOSP; no probe because POSTing would side-effect.
+    * ``DELETE /api/team/messages/{id}`` — deletes a gang message.
+
+    Catalog/list reads under the same prefixes are fine to probe (see
+    ``team-messages`` and ``team-messages-id`` below for the read shape).
     """
     csv_body, csv_ct = _csv_probe_body()
     return [
@@ -213,7 +228,19 @@ def build_probes(team_id: int = 1) -> list[Probe]:
               notes="5 boards (today/week/all_time/gangs/hunters), top 25 "
                     "each. 5-min cron snapshot."),
         Probe("bounties", "GET", "/api/bounties", True, (200,),
-              notes="Currently-open bounties (max 200, reward DESC)."),
+              notes="Currently-open bounties (max 200, reward DESC). Was 404 "
+                    "from 2026-06-03 onwards due to the CF-Transform-Rule + "
+                    "REQUEST_URI regex bug in bounties.php (same cascade as "
+                    "the original five handlers). Fixed 2026-06-04 ~10:00 ET; "
+                    "200 is the post-fix healthy state."),
+        Probe("team-messages", "GET", "/api/team/messages", True, (200,),
+              notes="Caller's gang messages list. The bare-path read path."),
+        Probe("team-messages-id", "GET", "/api/team/messages/1", True, (405,),
+              notes="Trailing /N is DELETE-only per spec at the top of "
+                    "team_messages.php. Was silently dropping the id and "
+                    "returning the gang list on GET pre-2026-06-04; now "
+                    "returns 405 with `Allow: DELETE` (METHOD verdict, still "
+                    "healthy). Operator-confirmed via the api-tester sweep."),
         Probe("health-asked-for", "GET", "/api/health", False, (200, 404),
               notes="Currently does not exist. Asked for in bug report ask #2."),
         Probe("stats-leak-check", "GET", "/api/stats", False, (404,),

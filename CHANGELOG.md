@@ -5,6 +5,48 @@ All notable changes to `wdgwars-api-tester`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] — 2026-06-04 — Team-messages probes + bounties cascade-fix note
+
+LOCOSP confirmed in #🛡️-mod-reports that the CF-Transform-Rule + REQUEST_URI
+regex cascade was wider than the original five handlers. `bounties.php` and
+`shop_activate.php` had the same miss and were patched in the same pass at
+~10:00 ET on 2026-06-04. Separately, `GET /api/team/messages/{id}` now
+returns 405 with `Allow: DELETE` instead of silently dropping the id and
+returning the gang messages list — the original spec at the top of
+`team_messages.php` was always "trailing `/N` is DELETE-only".
+
+### Added
+
+- `team-messages` probe — `GET /api/team/messages`, expects 200 (caller's
+  gang messages list, no id).
+- `team-messages-id` probe — `GET /api/team/messages/1`, expects 405 (the
+  METHOD verdict labels this as "responding with 405 wrong-verb (endpoint
+  healthy)", which is the post-fix healthy state for the DELETE-only
+  route).
+- `build_probes` docstring now lists the state-mutating endpoints
+  intentionally NOT probed, including `POST /api/shop/activate/{id}`
+  (same regex-cascade fix, but unsafe to probe because POST would
+  side-effect on production).
+
+### Changed
+
+- `bounties` probe note updated to record the 2026-06-04 fix. The
+  2026-05-30 observation `"also returns 404 with valid key — undeployed?"`
+  was the same regex bug, not an undeployed route. The probe already
+  expected 200; the live signal just starts firing OK now.
+- Mock server (`mock_wdgwars.py`) routes `/api/team/messages` (200 list)
+  and `/api/team/messages/{id}` (405 on GET, 200 on DELETE). Ordered
+  before the `/api/team/` catchall so the existing `/api/team/{id}` probe
+  still works.
+- Integration test `test_live_probe_schema` + `test_05_probe_coverage`
+  assert the two new probe names are present in output.
+
+### Operational
+
+- No webhook / digest format changes. The two new probes flow through the
+  existing verdict + humanization paths (`OK` for the list, `METHOD` for
+  the /N variant) so no downstream consumer touches were needed.
+
 ## [0.10.1] — 2026-06-04 — Log-shaped nightly report
 
 Reframed the digest from a summary-shaped morning report to a log-shaped

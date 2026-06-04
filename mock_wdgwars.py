@@ -186,6 +186,12 @@ TEAM_ME_OK_BODY = json.dumps({
     "members": [{"user_id": 1, "username": "mock"}],
 }).encode()
 
+# /api/team/messages — caller's gang messages list (no id).
+TEAM_MESSAGES_OK_BODY = json.dumps({
+    "ok": True,
+    "messages": [],
+}).encode()
+
 # /api/v2/upload-csv — POST 202 returning a job pointer.
 V2_UPLOAD_CSV_ACCEPTED_BODY = json.dumps({
     "ok": True,
@@ -356,9 +362,23 @@ class MockHandler(http.server.BaseHTTPRequestHandler):
             if not api_key or api_key == "g" * 64:
                 return 401, b'{"error":"auth required"}', "application/json"
             return 200, TEAM_ME_OK_BODY, "application/json"
+        if path == "/api/team/messages":
+            if not api_key or api_key == "g" * 64:
+                return 401, b'{"error":"auth required"}', "application/json"
+            return 200, TEAM_MESSAGES_OK_BODY, "application/json"
+        if path.startswith("/api/team/messages/"):
+            # Trailing /{id} is DELETE-only per spec (top of
+            # team_messages.php). Pre-2026-06-04 the handler silently
+            # dropped /N and returned the gang list; LOCOSP's fix makes
+            # GET return 405. Must come BEFORE the /api/team/ catchall.
+            if method == "GET":
+                return 405, b"Method Not Allowed", "text/plain"
+            if not api_key or api_key == "g" * 64:
+                return 401, b'{"error":"auth required"}', "application/json"
+            return 200, b'{"ok":true}', "application/json"
         if path.startswith("/api/team/"):
-            # /api/team/{id} — must come AFTER /api/team/me so that /me
-            # doesn't fall through here.
+            # /api/team/{id} — must come AFTER /api/team/me and the
+            # /api/team/messages routes so they don't fall through here.
             if not api_key or api_key == "g" * 64:
                 return 401, b'{"error":"auth required"}', "application/json"
             return 200, TEAM_ID_OK_BODY, "application/json"

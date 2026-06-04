@@ -91,7 +91,9 @@ If no key is found, the `valid` variant is dropped automatically and only the
 | `territories` | GET | `/api/territories` | yes | Global gang convex hulls (top-level array). |
 | `member-territories` | GET | `/api/member-territories` | yes | Cell-based grid + gang hulls. 5-min snapshot. |
 | `leaderboard` | GET | `/api/leaderboard` | yes | 5 boards. 5-min snapshot. |
-| `bounties` | GET | `/api/bounties` | yes | Open bounties (max 200). |
+| `bounties` | GET | `/api/bounties` | yes | Open bounties (max 200). Was 404 from 2026-06-03 onwards on the same regex-cascade bug as the original five handlers; fixed 2026-06-04. |
+| `team-messages` | GET | `/api/team/messages` | yes | Caller's gang messages list. |
+| `team-messages-id` | GET | `/api/team/messages/1` | yes | DELETE-only per spec — GET → 405 + `Allow: DELETE` post-2026-06-04. Healthy state is the METHOD verdict. |
 | `health-asked-for` | GET | `/api/health` | no | Doesn't exist yet. Asked for in bug #1. |
 | `stats-leak-check` | GET | `/api/stats` | no | Fires LEAK if body carries the LSWS admin-telemetry fingerprint. (locosp's 2026-05-30 fix landed — endpoint now 302s to login; rule tightened in v0.6.1 to detect content, not just status.) |
 | `api-sentinel-404-a/b/c` | GET | `/api/<random>` × 3 | no | Quorum fingerprint of the /api/ 404 page (2-of-3 majority required). |
