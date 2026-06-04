@@ -153,6 +153,39 @@ LEADERBOARD_OK_BODY = json.dumps({
 # /api/bounties — {bounties:[]} per docs.
 BOUNTIES_OK_BODY = json.dumps({"bounties": []}).encode()
 
+# /api/badge-catalog — curated 51-badge dictionary, 24h server cache.
+# Shipped 2026-06-03 in the LOCOSP CF-Transform-Rule batch.
+BADGE_CATALOG_OK_BODY = json.dumps({
+    "ok": True,
+    "count": 1,
+    "categories": ["wardriving"],
+    "badges": [
+        {"id": "wardriver", "label": "Wardriver",
+         "category": "wardriving", "criteria": "Upload 100 APs"},
+    ],
+}).encode()
+
+# /api/team/{id} — public team dossier. Top-level
+# {id, name, color, rank, created_at, members[]}.
+TEAM_ID_OK_BODY = json.dumps({
+    "id": 1,
+    "name": "MOCK",
+    "color": "#a855f7",
+    "rank": 1,
+    "created_at": "2026-01-01T00:00:00Z",
+    "members": [{"user_id": 1, "username": "mock"}],
+}).encode()
+
+# /api/team/me — caller's team dossier (same backend as /api/team/{id}).
+TEAM_ME_OK_BODY = json.dumps({
+    "id": 1,
+    "name": "MOCK",
+    "color": "#a855f7",
+    "rank": 1,
+    "created_at": "2026-01-01T00:00:00Z",
+    "members": [{"user_id": 1, "username": "mock"}],
+}).encode()
+
 # /api/v2/upload-csv — POST 202 returning a job pointer.
 V2_UPLOAD_CSV_ACCEPTED_BODY = json.dumps({
     "ok": True,
@@ -224,7 +257,10 @@ class MockHandler(http.server.BaseHTTPRequestHandler):
 
     def _route(self):
         """Return (status, body, content_type) for the path/method/scenario."""
-        path = self.path
+        # Strip query string for route matching — the 2026-06-03 map probes
+        # exercise `/api/member-territories?compact=1`, `?bbox=…`, `?zoom=5`
+        # and the dispatch should match the base path, not the qs variants.
+        path = self.path.split("?", 1)[0]
         method = self.command
         scenario = self.scenario
         api_key = self.headers.get("X-API-Key", "")
@@ -312,6 +348,20 @@ class MockHandler(http.server.BaseHTTPRequestHandler):
             if not api_key or api_key == "g" * 64:
                 return 401, b'{"error":"auth required"}', "application/json"
             return 200, MEMBER_TERRITORIES_OK_BODY, "application/json"
+        if path == "/api/badge-catalog":
+            if not api_key or api_key == "g" * 64:
+                return 401, b'{"error":"auth required"}', "application/json"
+            return 200, BADGE_CATALOG_OK_BODY, "application/json"
+        if path == "/api/team/me":
+            if not api_key or api_key == "g" * 64:
+                return 401, b'{"error":"auth required"}', "application/json"
+            return 200, TEAM_ME_OK_BODY, "application/json"
+        if path.startswith("/api/team/"):
+            # /api/team/{id} — must come AFTER /api/team/me so that /me
+            # doesn't fall through here.
+            if not api_key or api_key == "g" * 64:
+                return 401, b'{"error":"auth required"}', "application/json"
+            return 200, TEAM_ID_OK_BODY, "application/json"
         if path == "/api/leaderboard":
             if not api_key or api_key == "g" * 64:
                 return 401, b'{"error":"auth required"}', "application/json"
