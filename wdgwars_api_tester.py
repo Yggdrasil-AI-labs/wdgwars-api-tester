@@ -25,7 +25,7 @@ Quickstart:
 """
 from __future__ import annotations
 
-__version__ = "0.10.0"
+__version__ = "0.10.1"
 GITHUB_URL = "https://github.com/HiroAlleyCat/wdgwars-api-tester"
 
 import argparse
@@ -974,7 +974,7 @@ def _humanize_delta_line(line: str) -> str:
             probe = _probe_label_from_delta(left.strip())
             right = right.strip()
             v = right.split("/", 1)[0] if "/" in right else right
-            return f"{probe}: new probe added — currently {_humanize_verdict(v)}"
+            return f"{probe}: new probe added, currently {_humanize_verdict(v)}"
         except ValueError:
             return line
     if " GONE " in line or line.endswith(" GONE"):
@@ -994,15 +994,15 @@ def _humanize_delta_line(line: str) -> str:
     if pv == "OK" and cv == "ERROR":
         return f"{probe}: was healthy (HTTP {ps}), now timing out (>15s) or unreachable"
     if pv == "ERROR" and cv == "OK":
-        return f"{probe}: recovered — back to healthy (HTTP {cs})"
+        return f"{probe}: recovered, back to healthy (HTTP {cs})"
     if pv == "OK" and cv == "DEAD":
         return f"{probe}: was healthy, now route missing (404 sentinel match)"
     if pv == "DEAD" and cv == "OK":
-        return f"{probe}: route restored — back to healthy (HTTP {cs})"
+        return f"{probe}: route restored, back to healthy (HTTP {cs})"
     if pv == "OK" and cv in {"502", "503", "504", "522", "524"}:
         return f"{probe}: was healthy, now HTTP {cv} from the CDN/origin (likely upstream flap)"
     if cv == "OK" and pv in {"502", "503", "504", "522", "524"}:
-        return f"{probe}: recovered from HTTP {pv} — back to healthy"
+        return f"{probe}: recovered from HTTP {pv}, back to healthy"
     pretty_prev = _humanize_verdict(pv)
     pretty_curr = _humanize_verdict(cv)
     prev_status = f"HTTP {ps}" if ps else "no status"
@@ -1047,7 +1047,7 @@ def _humanize_verdict_summary(by_verdict: dict) -> list[str]:
         elif k == "404":
             bullets.append(f"{n} returning 404 (not a sentinel match)")
         elif k == "SENTINEL-DIVERGED":
-            bullets.append("sentinel quorum BROKEN — route detection unreliable")
+            bullets.append("sentinel quorum BROKEN, route detection unreliable")
         elif k in {"SENTINEL", "SENTINEL-OUTLIER", "SENTINEL-NONAPI"}:
             bullets.append(f"{n} background {_humanize_verdict(k)}")
     # Catch HTTP-numeric verdicts (400, 500, etc.) and anything else.
@@ -1114,23 +1114,23 @@ def _format_webhook_payload(prev_overall: str, curr_overall: str,
     if curr_overall == "HEALTHY" and prev_overall != "HEALTHY":
         human_headline = f"{emoji} API is fully healthy again ({_humanize_overall(prev_overall)} → all endpoints healthy)"
     elif "SENTINEL-DIVERGED" in curr_overall:
-        human_headline = f"{emoji} Route-detection sentinel just broke — verdicts may be unreliable until investigated"
+        human_headline = f"{emoji} Route-detection sentinel just broke. Verdicts may be unreliable until investigated."
     elif prev_overall != curr_overall:
         human_headline = (f"{emoji} API status changed: "
                           f"{_humanize_overall(prev_overall)} → {_humanize_overall(curr_overall)}")
     else:
         if dsum["upstream_flap_count"] == dsum["total_classified"] and dsum["total_classified"] > 0:
-            human_headline = (f"{emoji} Still {_humanize_overall(curr_overall)} — "
+            human_headline = (f"{emoji} Still {_humanize_overall(curr_overall)}. "
                               f"LOCOSP CDN/origin flapping "
-                              f"({dsum['improved']} recovered, {dsum['regressed']} regressed)")
+                              f"({dsum['improved']} recovered, {dsum['regressed']} regressed).")
         elif dsum["improved"] > dsum["regressed"]:
-            human_headline = (f"{emoji} Partial recovery — "
+            human_headline = (f"{emoji} Partial recovery: "
                               f"{dsum['improved']} probes recovered, "
-                              f"{dsum['regressed']} regressed (overall {_humanize_overall(curr_overall)})")
+                              f"{dsum['regressed']} regressed (overall {_humanize_overall(curr_overall)}).")
         elif dsum["regressed"] > dsum["improved"]:
-            human_headline = (f"{emoji} Partial regression — "
+            human_headline = (f"{emoji} Partial regression: "
                               f"{dsum['regressed']} probes regressed, "
-                              f"{dsum['improved']} recovered (overall {_humanize_overall(curr_overall)})")
+                              f"{dsum['improved']} recovered (overall {_humanize_overall(curr_overall)}).")
         else:
             human_headline = (f"{emoji} {dsum['total_classified']} probes shifted, no net change "
                               f"(overall {_humanize_overall(curr_overall)})")
@@ -1281,47 +1281,103 @@ def _summarize_state_log_window(records: list[dict]) -> dict:
     return out
 
 
+def _format_event_block(record: dict) -> list[str]:
+    """One state-log record → a chronological log block.
+
+    Output shape (per record):
+
+        HH:MM UTC: HEALTHY → DEGRADED (2 changes)
+          ↓ team-me/valid: was healthy (HTTP 200), now timing out (>15s) ...
+          ↓ team-id/valid: was healthy (HTTP 200), now timing out (>15s) ...
+
+    Suppressed events get a tag in the header line.
+    """
+    ts_iso = record.get("ts_iso", "")
+    if ts_iso and "T" in ts_iso:
+        hhmm = ts_iso.split("T", 1)[1][:5]
+    else:
+        ts = record.get("ts", 0)
+        hhmm = time.strftime("%H:%M", time.gmtime(ts)) if ts else "??:??"
+    prev = record.get("prev_overall", "?")
+    curr = record.get("curr_overall", "?")
+    deltas = record.get("deltas", []) or []
+    suppressed = bool(record.get("suppressed"))
+    suppress_reason = record.get("suppress_reason") or ""
+
+    if prev == curr:
+        transition = f"still {curr}"
+    else:
+        transition = f"{prev} → {curr}"
+    count_phrase = f"{len(deltas)} change{'s' if len(deltas) != 1 else ''}"
+    suppress_tag = (f", suppressed: {suppress_reason}"
+                    if suppressed and suppress_reason
+                    else (", suppressed" if suppressed else ""))
+    header = f"{hhmm} UTC: {transition} ({count_phrase}{suppress_tag})"
+
+    annotated, _dsum = _annotate_deltas(deltas)
+    out = [header]
+    for ann in annotated[:30]:
+        # _annotate_deltas emits "↑  <line>" / "↓  <line>" / "↔  <line>" /
+        # "·  <line>". Recover marker + raw delta line for humanization.
+        marker = ann[:1]
+        if marker not in {"↑", "↓", "↔", "·"}:
+            marker = " "
+            raw = ann
+        else:
+            raw = ann[1:].lstrip()
+        human = _humanize_delta_line(raw)
+        out.append(f"  {marker} {human}")
+    return out
+
+
 def _format_digest_payload(results: list[Result], s: dict,
                             window_summary: dict,
+                            records: list[dict] | None = None,
                             window_hours: int = 24) -> dict:
-    """Build the morning-digest webhook payload. Different shape from the loud
-    state-change alerts so channel readers can tell them apart at a glance."""
+    """Build the nightly-report webhook payload. Log-shaped: leads with a
+    chronological activity log so a reader can correlate with their own
+    server-side timestamps. Demoted snapshot at the tail."""
     today = time.strftime("%Y-%m-%d", time.gmtime())
-    bullets_now = _humanize_verdict_summary(s["by_verdict"])
     overall_human = _humanize_overall(s["overall"])
+    records = records or []
 
-    parts = [f"Morning report — {today}", ""]
-    parts.append(f"API status right now: **{overall_human}**")
-    parts.append(f"{s['total']} probes ran.")
-    if bullets_now:
-        for b in bullets_now:
-            parts.append(f"• {b}")
+    parts = [f"Nightly report for {today} (last {window_hours}h, times UTC)"]
+
+    if records:
+        sorted_recs = sorted(records, key=lambda r: r.get("ts", 0))
+        parts.append("")
+        parts.append("Activity log:")
+        for rec in sorted_recs:
+            parts.append("")
+            for line in _format_event_block(rec):
+                parts.append(line)
+    else:
+        parts.append("")
+        parts.append("Activity log: no state changes in the window. Steady all night.")
 
     parts.append("")
-    parts.append(f"Last {window_hours} hours: {window_summary['total_events']} state changes "
-                 f"({window_summary['loud_events']} loud, "
-                 f"{window_summary['suppressed_events']} suppressed as LOCOSP upstream flap)")
-    if window_summary["transitions"]:
-        top_transitions = sorted(window_summary["transitions"].items(),
-                                  key=lambda kv: -kv[1])[:5]
-        for trans, n in top_transitions:
-            parts.append(f"• {n}× {trans}")
-    if window_summary["probes_touched"]:
+    loud = window_summary.get("loud_events", 0)
+    suppressed = window_summary.get("suppressed_events", 0)
+    parts.append(f"Tally: {loud} loud transition{'s' if loud != 1 else ''}, "
+                 f"{suppressed} suppressed (LOCOSP upstream flap).")
+    if window_summary.get("probes_touched"):
         top_probes = sorted(window_summary["probes_touched"].items(),
-                             key=lambda kv: -kv[1])[:5]
-        parts.append("")
-        parts.append("Most-flapped probes:")
-        for probe, n in top_probes:
-            parts.append(f"• {probe}: {n} transitions")
+                             key=lambda kv: -kv[1])[:3]
+        names = ", ".join(f"{p} ({n})" for p, n in top_probes)
+        parts.append(f"Most-flapped probes: {names}.")
+
+    parts.append("")
+    parts.append(f"API status at report time: {overall_human} ({s['total']} probes ran).")
 
     parts.append("")
     if s["overall"] == "HEALTHY":
         parts.append("→ No action needed.")
     else:
-        parts.append(f"→ Overall state is {s['overall']}. See loud-channel posts for details.")
+        parts.append(f"→ Overall state is {s['overall']}. "
+                      "See loud-channel posts for live deltas.")
 
     flat = "\n".join(parts)
-    headline = f"Morning report — {today} — {overall_human}"
+    headline = f"Nightly report for {today}: {overall_human}"
 
     return {
         "text": flat,
@@ -1332,7 +1388,7 @@ def _format_digest_payload(results: list[Result], s: dict,
         "overall_human": overall_human,
         "total_probes": s["total"],
         "by_verdict": dict(s["by_verdict"]),
-        "by_verdict_human": bullets_now,
+        "by_verdict_human": _humanize_verdict_summary(s["by_verdict"]),
         "window_hours": window_hours,
         "window_summary": window_summary,
         "tool": "wdgwars-api-tester",
@@ -1795,6 +1851,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                    if args.state_log else [])
         window_summary = _summarize_state_log_window(records)
         payload = _format_digest_payload(results, s, window_summary,
+                                          records=records,
                                           window_hours=window_hours)
         ok = _post_webhook(args.digest, payload)
         log.info("digest: %s (overall=%s, total_probes=%d, "

@@ -19,7 +19,7 @@ from wdgwars_api_tester import (
 
 def _mk_results(by_verdict: dict, total: int = None):
     """Build a minimal {"overall", "by_verdict", "total"} dict for the
-    digest formatter — it doesn't read individual Result fields."""
+    digest formatter.it doesn't read individual Result fields."""
     if total is None:
         total = sum(by_verdict.values())
     return {"overall": "HEALTHY", "by_verdict": by_verdict, "total": total}
@@ -74,7 +74,7 @@ class TestReadStateLogWindow(unittest.TestCase):
             fresh = {"ts": now - 60, "prev_overall": "A", "curr_overall": "B"}
             p.write_text(json.dumps(old) + "\n" + json.dumps(fresh) + "\n",
                          encoding="utf-8")
-            # 1h window — old falls outside, fresh stays
+            # 1h window.old falls outside, fresh stays
             recs = _read_state_log_window(p, now - 3600)
             self.assertEqual(len(recs), 1)
             self.assertEqual(recs[0]["curr_overall"], "B")
@@ -121,43 +121,124 @@ class TestSummarizeStateLogWindow(unittest.TestCase):
 
 
 class TestFormatDigestPayload(unittest.TestCase):
-    def test_healthy_digest(self):
+    def test_healthy_digest_with_no_events(self):
         results = []
         s = _mk_results({"OK": 13, "AUTH-REQUIRED": 27, "DEAD": 2}, total=42)
         window = _summarize_state_log_window([])
-        p = _format_digest_payload(results, s, window, window_hours=24)
-        self.assertIn("Morning report", p["content"])
+        p = _format_digest_payload(results, s, window, records=[], window_hours=24)
+        # Log-shaped header.
+        self.assertIn("Nightly report", p["content"])
+        # Empty window says so explicitly.no surprise blank section.
+        self.assertIn("no state changes", p["content"])
+        self.assertIn("Steady all night", p["content"])
+        # Tail snapshot.single line, not a bullet list.
+        self.assertIn("API status at report time", p["content"])
         self.assertIn("all endpoints healthy", p["content"])
-        self.assertIn("13 endpoints healthy", p["content"])
-        self.assertIn("Last 24 hours", p["content"])
         self.assertIn("No action needed", p["content"])
         self.assertEqual(p["kind"], "digest")
         self.assertEqual(p["total_probes"], 42)
 
-    def test_digest_with_events(self):
+    def test_digest_with_events_has_chronological_log(self):
         results = []
         s = _mk_results({"OK": 13, "DEAD": 2}, total=15)
-        window = {"total_events": 4, "loud_events": 2, "suppressed_events": 2,
-                  "transitions": {"HEALTHY → DEGRADED": 2,
-                                  "DEGRADED → HEALTHY": 2},
-                  "probes_touched": {"team-me/valid": 4, "team-id/valid": 4}}
-        p = _format_digest_payload(results, s, window, window_hours=24)
-        self.assertIn("4 state changes", p["content"])
-        self.assertIn("2 loud", p["content"])
-        self.assertIn("2 suppressed", p["content"])
-        self.assertIn("HEALTHY → DEGRADED", p["content"])
-        self.assertIn("Most-flapped probes", p["content"])
-        self.assertIn("team-me/valid", p["content"])
+        records = [
+            {"ts": 100, "ts_iso": "2026-06-04T02:24:00Z",
+             "prev_overall": "HEALTHY", "curr_overall": "DEGRADED",
+             "deltas": ["wdgwars.pl team-me/valid                        OK/200 -> ERROR/-"],
+             "by_verdict": {}, "suppressed": False, "suppress_reason": ""},
+            {"ts": 200, "ts_iso": "2026-06-04T03:25:00Z",
+             "prev_overall": "DEGRADED", "curr_overall": "HEALTHY",
+             "deltas": ["wdgwars.pl team-me/valid                        ERROR/- -> OK/200"],
+             "by_verdict": {}, "suppressed": False, "suppress_reason": ""},
+            {"ts": 300, "ts_iso": "2026-06-04T05:43:00Z",
+             "prev_overall": "HEALTHY", "curr_overall": "HEALTHY",
+             "deltas": ["wdgwars.pl team-me/valid                        OK/200 -> 524/524"],
+             "by_verdict": {}, "suppressed": True, "suppress_reason": "all flap, no net regression"},
+        ]
+        window = _summarize_state_log_window(records)
+        p = _format_digest_payload(results, s, window, records=records, window_hours=24)
+        content = p["content"]
+        # Header is log-y, not summary-y.
+        self.assertIn("Activity log", content)
+        # Each event renders as its own timestamped block.
+        self.assertIn("02:24 UTC", content)
+        self.assertIn("03:25 UTC", content)
+        self.assertIn("05:43 UTC", content)
+        # Transition labels appear in the headers.
+        self.assertIn("HEALTHY → DEGRADED", content)
+        self.assertIn("DEGRADED → HEALTHY", content)
+        # Per-event deltas show up humanized.
+        self.assertIn("was healthy", content)
+        self.assertIn("timing out", content)
+        self.assertIn("recovered", content)
+        # Suppressed event is tagged in its header.
+        self.assertIn("suppressed", content)
+        # Tally line at the bottom.
+        self.assertIn("2 loud transitions", content)
+        self.assertIn("1 suppressed", content)
+        self.assertIn("Most-flapped probes", content)
+
+    def test_digest_log_is_chronological(self):
+        """Records out of order get sorted by ts before rendering."""
+        s = _mk_results({"OK": 5}, total=5)
+        records = [
+            {"ts": 300, "ts_iso": "2026-06-04T03:00:00Z",
+             "prev_overall": "DEGRADED", "curr_overall": "HEALTHY",
+             "deltas": [], "by_verdict": {}, "suppressed": False},
+            {"ts": 100, "ts_iso": "2026-06-04T01:00:00Z",
+             "prev_overall": "HEALTHY", "curr_overall": "DEGRADED",
+             "deltas": [], "by_verdict": {}, "suppressed": False},
+        ]
+        window = _summarize_state_log_window(records)
+        p = _format_digest_payload([], s, window, records=records, window_hours=24)
+        content = p["content"]
+        i_first = content.index("01:00 UTC")
+        i_second = content.index("03:00 UTC")
+        self.assertLess(i_first, i_second)
 
     def test_digest_payload_carries_structured_fields(self):
         s = _mk_results({"OK": 5}, total=5)
         window = _summarize_state_log_window([])
-        p = _format_digest_payload([], s, window, window_hours=24)
+        p = _format_digest_payload([], s, window, records=[], window_hours=24)
         self.assertEqual(p["kind"], "digest")
         self.assertEqual(p["overall"], "HEALTHY")
         self.assertEqual(p["overall_human"], "all endpoints healthy")
         self.assertEqual(p["window_hours"], 24)
         self.assertEqual(p["window_summary"]["total_events"], 0)
+
+
+class TestFormatEventBlock(unittest.TestCase):
+    def test_single_delta_event(self):
+        from wdgwars_api_tester import _format_event_block
+        rec = {"ts_iso": "2026-06-04T02:24:00Z",
+               "prev_overall": "HEALTHY", "curr_overall": "DEGRADED",
+               "deltas": ["wdgwars.pl team-me/valid                        OK/200 -> ERROR/-"],
+               "suppressed": False, "suppress_reason": ""}
+        block = _format_event_block(rec)
+        self.assertEqual(block[0], "02:24 UTC: HEALTHY → DEGRADED (1 change)")
+        # Indented delta line with direction marker.
+        self.assertTrue(block[1].startswith("  "))
+        self.assertIn("↓", block[1])
+        self.assertIn("team-me/valid", block[1])
+        self.assertIn("was healthy", block[1])
+
+    def test_suppressed_event_tagged(self):
+        from wdgwars_api_tester import _format_event_block
+        rec = {"ts_iso": "2026-06-04T05:43:00Z",
+               "prev_overall": "HEALTHY", "curr_overall": "HEALTHY",
+               "deltas": ["wdgwars.pl team-me/valid                        OK/200 -> 524/524"],
+               "suppressed": True, "suppress_reason": "all flap, no net regression"}
+        block = _format_event_block(rec)
+        # No-state-change suppressed: header reads 'still HEALTHY' + suppressed tag.
+        self.assertIn("still HEALTHY", block[0])
+        self.assertIn("suppressed: all flap", block[0])
+
+    def test_missing_ts_iso_falls_back_to_ts(self):
+        from wdgwars_api_tester import _format_event_block
+        rec = {"ts": 0, "prev_overall": "H", "curr_overall": "D", "deltas": []}
+        block = _format_event_block(rec)
+        # Epoch 0 → "00:00" via gmtime, so fallback at least renders.
+        self.assertTrue(block[0].endswith("(0 changes)"))
 
 
 if __name__ == "__main__":

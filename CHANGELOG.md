@@ -5,6 +5,55 @@ All notable changes to `wdgwars-api-tester`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] — 2026-06-04 — Log-shaped nightly report
+
+Reframed the digest from a summary-shaped morning report to a log-shaped
+nightly report. Aimed at a debugging audience (LOCOSP correlating with
+their own server logs): leads with a timestamped chronological event log
+so the reader can match probe-side observations against server-side
+events.
+
+### Changed
+
+- `_format_digest_payload` rewritten. Output now leads with an Activity
+  log section (one block per state-log record, chronological order),
+  followed by a one-line tally and a single-line current-state snapshot.
+  Previous shape (snapshot-first, transitions counted) is removed.
+- Header is now "Nightly report for YYYY-MM-DD" instead of "Morning
+  report".
+- Each event block has the shape:
+
+      HH:MM UTC: PREV -> CURR (N changes[, suppressed: reason])
+        marker probe/auth: humanized delta line
+
+- The `records` arg is now forwarded into the payload so consumers can
+  reconstruct the event timeline from the structured fields too.
+
+### Added
+
+- `_format_event_block(record)` helper. Pure function, independently
+  testable. Picks HH:MM from `ts_iso`, falls back to `gmtime(ts)`, and
+  delegates per-delta rendering to `_humanize_delta_line` so the log
+  inherits the same plain-English mapping as the loud-channel posts.
+
+### Tests
+
+- `test_digest.py`: added `TestFormatEventBlock` (3 tests) + updated
+  `TestFormatDigestPayload` for the new log shape. Full suite: 128/128
+  pass.
+
+### Operational
+
+- The `wdgwars-api-tester-digest.service` unit's `--digest` URL should
+  point at the new dedicated `#api-tester-log` Discord channel (separate
+  webhook from the loud `#api-tester` channel) so the nightly report
+  doesn't blur with the live state-change alerts.
+
+### Style
+
+- Em-dashes scrubbed from all user-visible strings (headlines, delta
+  prose, summary bullets) per the lab style rule.
+
 ## [0.10.0] — 2026-06-04 — Plain-English webhook output + morning digest
 
 State-change webhook posts now read as plain English instead of jargon, and a
