@@ -5,6 +5,63 @@ All notable changes to `wdgwars-api-tester`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — 2026-06-04 — Restore upstream-flap suppression + `--silent-webhook`
+
+The v0.7.0 outage-backoff squash-merge (PR #4, commit 9b32b7f) collapsed a
+parallel local branch that carried six helpers and a CLI flag. Those didn't
+make it into the squash. This release restores them on top of v0.8.0. No
+existing behavior changes — the helpers gate a new code path that only fires
+in `--watch` mode when `--silent-webhook` is set.
+
+### Added
+
+- `--silent-webhook URL` CLI flag. In `--watch` mode, POSTs suppressed alerts
+  (LOCOSP upstream flap, no net regression) to this URL instead of dropping
+  them. Same payload as `--alert-webhook` with a `[suppressed: <reason>]`
+  prefix on `content` + `text` so a channel reader can tell at a glance.
+- `_verdict_rank(verdict, status)` — 5xx ranks below DEAD so we don't
+  mis-call an upstream gateway failure as a probe regression.
+- `_is_upstream_5xx(verdict, status)` — single source of truth for
+  "is this transition a CDN/origin flap rather than a probe-side change."
+  Matches explicit CF codes (502/503/504/522/524) and any numeric 5xx.
+- `_classify_delta(...)` — labels each delta `improved` / `regressed` /
+  `sideways` by verdict-rank, tags it `upstream_flap` if either side is 5xx.
+- `_parse_delta_line(line)` — inverse of `_probe_deltas` line format,
+  returns None for `NEW` / `GONE` (those are always real signal).
+- `_annotate_deltas(deltas)` — runs the above over a list, returns
+  (annotated_lines_with_↑↓↔_markers, summary_dict).
+- `_should_suppress_alert(prev_overall, curr_overall, summary)` — the
+  suppression policy. Suppress only when overall state didn't change AND
+  every classified delta is upstream-flap AND `regressed <= improved`.
+
+### Changed
+
+- `_format_webhook_payload(...)` rewritten to use the new annotation helpers.
+  Directional `↑`/`↓`/`↔` markers in the delta block, partial-recovery /
+  upstream-flap headlines when `overall` doesn't change, and a `→ action`
+  footer ("LOCOSP upstream is flapping. No local action." etc.). The payload
+  now also carries `delta_summary` + `action` fields for structured consumers.
+- `--watch` loop wraps the alert-emit block with the suppression check.
+  When suppressed: log `alert SUPPRESSED: <reason>` and (if configured)
+  POST to `--silent-webhook` instead of `--alert-webhook` / `--exec-on-change`.
+
+### Tests
+
+- `test_suppression.py` (27 new tests) covering `_verdict_rank`,
+  `_is_upstream_5xx`, `_classify_delta`, `_parse_delta_line`,
+  `_annotate_deltas`, and all six `_should_suppress_alert` boundary cases:
+  overall changed, all-flap-no-net-regression, all-flap-net-improved,
+  mixed flap + non-flap, net regression with flap, zero classifiable
+  deltas, and unclassified (NEW/GONE) present.
+
+### Operational
+
+- The systemd user unit `~/.config/systemd/user/wdgwars-api-tester.service`
+  on the prod host had `--silent-webhook ${ASGARD_WEBHOOK_LAB_SILENT}` in
+  its ExecStart, so it failed to start with argparse exit 2 every 30s
+  between the v0.7.0 squash-merge and the hotfix that stripped the flag.
+  Bug log: `BrainVault/Meta/Bugs/2026-06-04-wdgwars-api-tester-silent-webhook-regression.md`.
+
 ## [0.8.0] — 2026-06-03 — Probes for the 2026-06-03 LOCOSP-shipped surface
 
 Six new probes covering the API additions LOCOSP shipped on 2026-06-03 in

@@ -25,7 +25,7 @@ Quickstart:
 """
 from __future__ import annotations
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 GITHUB_URL = "https://github.com/HiroAlleyCat/wdgwars-api-tester"
 
 import argparse
@@ -777,36 +777,186 @@ def _post_telegram(token: str, chat_id: str, text: str,
 # generic handler (n8n, PagerDuty Events v2, custom Flask/FastAPI, etc.).
 
 
+def _verdict_rank(verdict: str, status: int) -> int:
+    """Lower number = worse. Numeric 5xx statuses are treated as gateway/
+    upstream failures and rank below DEAD (DEAD=3, 5xx=2)."""
+    v = (verdict or "").upper()
+    if v in {"502", "503", "504", "522", "524"}:
+        return 2
+    if status and 500 <= status < 600:
+        return 2
+    return VERDICT_PRIORITY.get(v, 99)
+
+
+def _is_upstream_5xx(verdict: str, status: int) -> bool:
+    """True if this side of a transition looks like a CDN/origin gateway
+    failure, not a probe-side change. Used to detect LOCOSP upstream flap."""
+    v = (verdict or "").upper()
+    if v in {"502", "503", "504", "522", "524"}:
+        return True
+    if status and 500 <= status < 600:
+        return True
+    return False
+
+
+def _classify_delta(prev_verdict: str, prev_status: int,
+                     curr_verdict: str, curr_status: int) -> dict:
+    """Returns {direction: improved|regressed|sideways, upstream_flap: bool}.
+
+    Direction is by verdict-rank: improved if curr is better-ranked than prev.
+    upstream_flap is True if EITHER side is a 5xx — flagging the transition as
+    LOCOSP-origin/CDN flap rather than something the probe itself controls."""
+    pr = _verdict_rank(prev_verdict, prev_status)
+    cr = _verdict_rank(curr_verdict, curr_status)
+    if cr > pr:
+        direction = "improved"
+    elif cr < pr:
+        direction = "regressed"
+    else:
+        direction = "sideways"
+    return {
+        "direction": direction,
+        "upstream_flap": (_is_upstream_5xx(prev_verdict, prev_status)
+                          or _is_upstream_5xx(curr_verdict, curr_status)),
+    }
+
+
+def _parse_delta_line(line: str) -> dict | None:
+    """Parse a line from _probe_deltas back into structured fields.
+
+    Format: '<host> <probe>/<auth>          <PV>/<PS> -> <CV>/<CS>'
+    Returns None for NEW / GONE lines (we don't classify those — they're
+    always real signal, not noise)."""
+    if " NEW -> " in line or " GONE " in line:
+        return None
+    if " -> " not in line:
+        return None
+    left, _, right = line.rpartition(" -> ")
+    try:
+        label, prev_pair = left.rsplit(None, 1)
+        curr_pair = right.strip()
+        pv, ps = prev_pair.split("/", 1)
+        cv, cs = curr_pair.split("/", 1)
+        return {
+            "label": label.strip(),
+            "prev_verdict": pv, "prev_status": int(ps) if ps.isdigit() else 0,
+            "curr_verdict": cv, "curr_status": int(cs) if cs.isdigit() else 0,
+        }
+    except Exception:
+        return None
+
+
+def _annotate_deltas(deltas: list[str]) -> tuple[list[str], dict]:
+    """Returns (annotated_lines, summary) where summary has counts:
+       {improved, regressed, sideways, upstream_flap_count, total_classified,
+        unclassified}."""
+    summary = {"improved": 0, "regressed": 0, "sideways": 0,
+                "upstream_flap_count": 0, "total_classified": 0,
+                "unclassified": 0}
+    out = []
+    for line in deltas:
+        parsed = _parse_delta_line(line)
+        if not parsed:
+            out.append(f"·  {line}")
+            summary["unclassified"] += 1
+            continue
+        c = _classify_delta(parsed["prev_verdict"], parsed["prev_status"],
+                             parsed["curr_verdict"], parsed["curr_status"])
+        marker = {"improved": "↑", "regressed": "↓",
+                  "sideways": "↔"}[c["direction"]]
+        out.append(f"{marker}  {line}")
+        summary[c["direction"]] += 1
+        summary["total_classified"] += 1
+        if c["upstream_flap"]:
+            summary["upstream_flap_count"] += 1
+    return out, summary
+
+
+def _should_suppress_alert(prev_overall: str, curr_overall: str,
+                            delta_summary: dict) -> tuple[bool, str]:
+    """Decide whether to suppress the webhook + exec-on-change for this tick.
+
+    Suppress when:
+      - overall state didn't change AND
+      - all classified deltas are upstream flaps AND
+      - net direction isn't getting worse (regressed <= improved)
+    Returns (suppress: bool, reason: str).
+    """
+    if prev_overall != curr_overall:
+        return False, "overall state changed"
+    if delta_summary["unclassified"] > 0:
+        return False, "unclassified deltas present (e.g. NEW/GONE)"
+    if delta_summary["total_classified"] == 0:
+        return False, "no classifiable deltas"
+    if delta_summary["upstream_flap_count"] != delta_summary["total_classified"]:
+        return False, "non-upstream-flap delta present"
+    if delta_summary["regressed"] > delta_summary["improved"]:
+        return False, "net regression (more probes worse than better)"
+    return True, (f"all {delta_summary['total_classified']} deltas are "
+                  f"LOCOSP upstream flap, no net regression")
+
+
 def _format_webhook_payload(prev_overall: str, curr_overall: str,
                              deltas: list[str], by_verdict: dict) -> dict:
-    """Pure formatter. Returns a dict ready for json.dumps."""
-    if curr_overall == "HEALTHY" and prev_overall != "HEALTHY":
-        emoji = "✅"
-        kind = "recovery"
-    elif "SENTINEL-DIVERGED" in curr_overall:
-        emoji = "🔧"
-        kind = "diagnostic-broken"
-    else:
-        emoji = "🚨"
-        kind = "regression"
+    """Formatter. Renders directional ↑/↓/↔ markers and a one-line action."""
+    annotated, dsum = _annotate_deltas(deltas)
 
-    headline = f"{emoji} wdgwars-api-tester: {prev_overall} → {curr_overall}"
-    delta_block = "\n".join(deltas[:30]) if deltas else "(no per-probe deltas)"
+    if curr_overall == "HEALTHY" and prev_overall != "HEALTHY":
+        emoji, kind = "✅", "recovery"
+        headline = f"{emoji} wdgwars-api-tester: RECOVERED ({prev_overall} → {curr_overall})"
+    elif "SENTINEL-DIVERGED" in curr_overall:
+        emoji, kind = "🔧", "diagnostic-broken"
+        headline = f"{emoji} wdgwars-api-tester: {prev_overall} → {curr_overall}"
+    elif prev_overall != curr_overall:
+        emoji, kind = "🚨", "regression"
+        headline = f"{emoji} wdgwars-api-tester: {prev_overall} → {curr_overall}"
+    else:
+        if dsum["upstream_flap_count"] == dsum["total_classified"] and dsum["total_classified"] > 0:
+            emoji, kind = "📡", "upstream-flap"
+            shape = f"LOCOSP upstream flap, {dsum['improved']} recovered, {dsum['regressed']} regressed"
+        elif dsum["improved"] > dsum["regressed"]:
+            emoji, kind = "🔁", "partial-recovery"
+            shape = f"{dsum['improved']} recovered, {dsum['regressed']} regressed"
+        elif dsum["regressed"] > dsum["improved"]:
+            emoji, kind = "⚠️", "partial-regression"
+            shape = f"{dsum['regressed']} regressed, {dsum['improved']} recovered"
+        else:
+            emoji, kind = "🔁", "sideways"
+            shape = f"{dsum['total_classified']} probes shifted, no net change"
+        headline = f"{emoji} wdgwars-api-tester: still {curr_overall} ({shape})"
+
+    if (dsum["upstream_flap_count"] == dsum["total_classified"]
+            and dsum["total_classified"] > 0
+            and dsum["regressed"] <= dsum["improved"]):
+        action = "LOCOSP upstream is flapping. No local action."
+    elif dsum["regressed"] > 0 and dsum["upstream_flap_count"] < dsum["total_classified"]:
+        action = "Non-upstream probe regressed. Investigate."
+    elif curr_overall == "HEALTHY" and prev_overall != "HEALTHY":
+        action = "Recovered. No action."
+    elif "DEGRADED" in curr_overall and dsum["total_classified"] == 0:
+        action = "Steady-state DEGRADED (stable DEAD endpoints). No action."
+    else:
+        action = ""
+
+    delta_block = "\n".join(annotated[:30]) if annotated else "(no per-probe deltas)"
     verdicts_str = ", ".join(f"{k}={v}" for k, v in sorted(by_verdict.items()))
-    flat = f"{headline}\n\n{delta_block}\n\nverdicts: {verdicts_str}"
+    body_parts = [headline, "", delta_block, "", f"verdicts: {verdicts_str}"]
+    if action:
+        body_parts.append("")
+        body_parts.append(f"→ {action}")
+    flat = "\n".join(body_parts)
 
     return {
-        # Slack incoming-webhook field
         "text": flat,
-        # Discord webhook field
         "content": flat,
-        # Generic / structured consumers
         "title": headline,
         "kind": kind,
         "overall": curr_overall,
         "prev_overall": prev_overall,
         "deltas": list(deltas),
         "by_verdict": dict(by_verdict),
+        "delta_summary": dsum,
+        "action": action,
         "tool": "wdgwars-api-tester",
         "version": __version__,
     }
@@ -1053,6 +1203,11 @@ def main(argv: Optional[list[str]] = None) -> int:
                    "incoming webhooks, n8n, PagerDuty Events v2, or any "
                    "generic HTTP endpoint — payload carries both `text` "
                    "(Slack), `content` (Discord), and structured fields.")
+    p.add_argument("--silent-webhook",
+                   help="POST suppressed alerts (LOCOSP upstream flap "
+                   "etc.) to this URL instead of dropping them to the "
+                   "journal. Same payload as --alert-webhook with a "
+                   "[suppressed] tag in the header.")
     p.add_argument("--exec-on-change",
                    help="In --watch mode, run this shell command on every "
                    "state change. Env vars exported: WDGWARS_OVERALL, "
@@ -1111,10 +1266,12 @@ def main(argv: Optional[list[str]] = None) -> int:
                         "TELEGRAM_CHAT_ID missing. Disabling.")
             args.alert_telegram = False
 
-    if (args.alert_webhook or args.exec_on_change) and not args.watch:
-        log.warning("--alert-webhook and --exec-on-change require --watch; "
-                    "one-shot mode has no state to alert on. Ignoring.")
+    if (args.alert_webhook or args.silent_webhook or args.exec_on_change) and not args.watch:
+        log.warning("--alert-webhook, --silent-webhook, and --exec-on-change "
+                    "require --watch; one-shot mode has no state to alert on. "
+                    "Ignoring.")
         args.alert_webhook = None
+        args.silent_webhook = None
         args.exec_on_change = None
 
     def one_pass() -> tuple[list[Result], dict, str]:
@@ -1187,13 +1344,27 @@ def main(argv: Optional[list[str]] = None) -> int:
                         ok = _post_telegram(tg_token, tg_chat_id, text)
                         log.info("  telegram: %s",
                                  "sent" if ok else "FAILED")
-                    if args.alert_webhook:
+                    _, _dsum = _annotate_deltas(deltas)
+                    suppress, reason = _should_suppress_alert(
+                        last_overall, overall, _dsum)
+                    if suppress:
+                        log.info("  alert SUPPRESSED: %s", reason)
+                        if args.silent_webhook:
+                            payload = _format_webhook_payload(
+                                last_overall, overall, deltas, s["by_verdict"])
+                            tag = f"[suppressed: {reason}]\n"
+                            payload["content"] = tag + payload["content"]
+                            payload["text"] = tag + payload["text"]
+                            ok = _post_webhook(args.silent_webhook, payload)
+                            log.info("  silent-webhook: %s",
+                                     "sent" if ok else "FAILED")
+                    if args.alert_webhook and not suppress:
                         payload = _format_webhook_payload(
                             last_overall, overall, deltas, s["by_verdict"])
                         ok = _post_webhook(args.alert_webhook, payload)
                         log.info("  webhook: %s",
                                  "sent" if ok else "FAILED")
-                    if args.exec_on_change:
+                    if args.exec_on_change and not suppress:
                         ok = _exec_on_change(
                             args.exec_on_change, last_overall, overall,
                             deltas, s["by_verdict"])
