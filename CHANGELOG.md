@@ -5,6 +5,38 @@ All notable changes to `wdgwars-api-tester`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - CI quality gates + security review
+
+Tooling and CI only — no change to `wdgwars_api_tester.py` behavior, so no
+version bump.
+
+Brings wdgwars-api-tester onto the same gated CI pipeline as the sibling
+feeder repos (Muninn, Heimdall, wigle-to-wdgwars): pytest + coverage →
+SonarCloud quality gate → Snyk dependency scan → gated release-artifact build.
+The `sonarcloud` / `snyk` jobs stay red until the repo is imported into
+SonarCloud and the `SONAR_TOKEN` / `SNYK_TOKEN` secrets are added (see CI.md);
+the test + coverage stage is independent and passes on its own. (The tool is
+pure stdlib, so the Snyk stage is effectively a no-op — kept for parity.)
+
+A review against the SonarCloud SAST finding classes found nothing to
+remediate. The one security-sensitive construct — the `shell=True`
+exec-on-change hook — is acceptable by design: the command is operator-authored
+and the network-influenced state reaches it only via environment variables,
+never interpolated into the command string. See SECURITY-FINDINGS.md.
+
+### Added
+
+- `.github/workflows/ci-quality-gates.yml` — gated quality + security pipeline.
+- `pyproject.toml` (new — pytest collection scoped to `test_*.py`, plus a
+  coverage config with a 50% regression floor; baseline ~55%),
+  `sonar-project.properties`, `requirements.txt` (placeholder — no runtime
+  deps), `requirements-dev.txt`, and `CI.md`.
+- `test_security.py` — pins the exec-on-change env-var contract: a
+  shell-injection payload in a delta must arrive as environment *data*
+  (`WDGWARS_DELTAS`), never as executed command text.
+- `SECURITY-FINDINGS.md` — the security review write-up; pointer added to
+  `SECURITY.md`.
+
 ## [0.12.2] - 2026-06-05 - Severity tag (low/medium/high) on every post + plural fixes
 
 State-change posts are now prefixed with `[low]` / `[medium]` / `[high]`
