@@ -106,6 +106,17 @@ need to disable alert dispatch in a hurry (suspected leak of webhook
 URL or Telegram bot token), kill the `--watch` process; alerts only
 fire while the probe is running.
 
+## Static-analysis review
+
+A review of this tool against the SonarCloud SAST finding classes (path
+traversal, command/argument injection, insecure temp use, unsafe DB opens)
+found nothing to remediate. The one security-sensitive construct — the
+`shell=True` exec-on-change hook — is acceptable by design (operator-authored
+command; network-influenced state passed via environment variables, never
+interpolated into the command string), and that behavior is now pinned by
+`test_security.py`. The full write-up is in
+[SECURITY-FINDINGS.md](SECURITY-FINDINGS.md).
+
 ## Reporting issues
 
 Open a GitHub issue, or DM the maintainer on the WDGoWars community
