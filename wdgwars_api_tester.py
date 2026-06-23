@@ -213,13 +213,12 @@ def build_probes(team_id: int = 1) -> list[Probe]:
                     "lookup keyed by gang_id. Cuts payload ~20-30%."),
         Probe("member-territories-bbox",
               "GET",
-              "/api/member-territories?compact=1&bbox=-82,41,-81,42&zoom=8",
+              "/api/member-territories?compact=1&bbox=-74,40,-73,41&zoom=8",
               True, (200,),
               notes="Server-side spatial filter shipped 2026-06-03. Accepts "
                     "Leaflet bounds.toBBoxString() (W,S,E,N) or "
                     "min_lat,min_lng,max_lat,max_lng. Response echoes parsed "
-                    "bbox in [S,W,N,E] order. Probe uses a NE-Ohio window "
-                    "around the operator's Lorain coordinates."),
+                    "bbox in [S,W,N,E] order. Probe uses a sample bounding window."),
         Probe("member-territories-zoom-skip",
               "GET", "/api/member-territories?zoom=5", True, (200,),
               notes="At zoom<6 server returns gang_hulls only with "
