@@ -1,5 +1,11 @@
 # wdgwars-api-tester
 
+<p align="center">
+  <a href="https://github.com/Yggdrasil-AI-labs/wdgwars-api-tester/actions/workflows/ci-quality-gates.yml"><img alt="CI" src="https://github.com/Yggdrasil-AI-labs/wdgwars-api-tester/actions/workflows/ci-quality-gates.yml/badge.svg"></a>
+  <a href="https://sonarcloud.io/dashboard?id=Yggdrasil-AI-labs_wdgwars-api-tester"><img alt="Quality gate" src="https://sonarcloud.io/api/project_badges/measure?project=Yggdrasil-AI-labs_wdgwars-api-tester&metric=alert_status"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-b08850.svg"></a>
+</p>
+
 Systematic probe of the **[WDGoWars](https://wdgwars.pl/)** HTTP API surface.
 
 Built 2026-05-29 during the mass `/api/*` 404 outage. The point of this tool is
@@ -17,10 +23,10 @@ Stdlib-only Python 3. No `pip install`. Single file.
 
 Sibling repos in the WDGoWars feeder family:
 
-- [Muninn](https://github.com/HiroAlleyCat/adsb-to-wdgwars) — ADS-B feeder
-- [Heimdall](https://github.com/HiroAlleyCat/meshcore-to-wdgwars) — MeshCore LoRa feeder
-- [wigle-to-wdgwars](https://github.com/HiroAlleyCat/wigle-to-wdgwars) — WiGLE Wi-Fi/BLE feeder
-- [gungnir](https://github.com/HiroAlleyCat/gungnir) — shared HMAC transport library
+- [Muninn](https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars) — ADS-B feeder
+- [Heimdall](https://github.com/Yggdrasil-AI-labs/meshcore-to-wdgwars) — MeshCore LoRa feeder
+- [wigle-to-wdgwars](https://github.com/Yggdrasil-AI-labs/wigle-to-wdgwars) — WiGLE Wi-Fi/BLE feeder
+- [gungnir](https://github.com/Yggdrasil-AI-labs/gungnir) — shared HMAC transport library
 
 ## Quick start
 
@@ -66,7 +72,7 @@ python3 wdgwars_api_tester.py --watch 60 \
 
 ## API key
 
-Same precedence as [wigle-to-wdgwars](https://github.com/HiroAlleyCat/wigle-to-wdgwars):
+Same precedence as [wigle-to-wdgwars](https://github.com/Yggdrasil-AI-labs/wigle-to-wdgwars):
 
 1. `--key` CLI flag
 2. `$WDGWARS_API_KEY`
@@ -399,13 +405,13 @@ update.bat            # Windows (double-click)
 Or by hand:
 
 ```bash
-curl -O https://raw.githubusercontent.com/HiroAlleyCat/wdgwars-api-tester/main/wdgwars_api_tester.py
+curl -O https://raw.githubusercontent.com/Yggdrasil-AI-labs/wdgwars-api-tester/main/wdgwars_api_tester.py
 ```
 
 ## Related
 
-- [wigle-to-wdgwars](https://github.com/HiroAlleyCat/wigle-to-wdgwars) — WiFi/BLE CSV uploader.
-- [adsb-to-wdgwars (Muninn)](https://github.com/HiroAlleyCat/adsb-to-wdgwars) — ADS-B uploader.
+- [wigle-to-wdgwars](https://github.com/Yggdrasil-AI-labs/wigle-to-wdgwars) — WiFi/BLE CSV uploader.
+- [adsb-to-wdgwars (Muninn)](https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars) — ADS-B uploader.
 
 ## License
 
