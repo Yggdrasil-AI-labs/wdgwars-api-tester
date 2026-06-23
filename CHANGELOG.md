@@ -384,7 +384,7 @@ tiles / PMTiles), and pin contract regressions on the new endpoints.
   `gangs` lookup keyed by `gang_id`. Cuts payload ~20-30%.
 - `member-territories-bbox` probe — `GET /api/member-territories?compact=1&bbox=W,S,E,N&zoom=8`.
   Server-side spatial filter. Accepts Leaflet `bounds.toBBoxString()`
-  format. Probe uses a NE-Ohio window.
+  format. Probe uses a sample bounding window.
 - `member-territories-zoom-skip` probe — `GET /api/member-territories?zoom=5`.
   At zoom<6 the server returns `gang_hulls` only with
   `zoom_skipped_cells:true` and an empty `cells[]`. Verifies the
