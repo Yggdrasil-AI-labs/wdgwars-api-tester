@@ -5,6 +5,14 @@ All notable changes to `wdgwars-api-tester`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.1] - Startup heartbeat
+
+`--watch` now writes a `status=starting` heartbeat before the first sweep when
+`--heartbeat-file` is set. Without it, a fresh start (or restart) had no
+heartbeat for the duration of the first sweep (~30s), so a `--check-stale`
+watchdog firing in that window would false-alarm on a missing file. Now a
+heartbeat always exists once the loop is up.
+
 ## [0.13.0] - Watch-loop wedge protection
 
 The `--watch` loop could freeze indefinitely without dying. `--timeout` is a

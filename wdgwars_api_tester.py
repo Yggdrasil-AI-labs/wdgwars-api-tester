@@ -25,7 +25,7 @@ Quickstart:
 """
 from __future__ import annotations
 
-__version__ = "0.13.0"
+__version__ = "0.13.1"
 GITHUB_URL = "https://github.com/HiroAlleyCat/wdgwars-api-tester"
 
 import argparse
@@ -2031,6 +2031,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         # submit is never queued behind a wedged read.
         sweep_pool = (concurrent.futures.ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="sweep") if deadline else None)
+        # Write a heartbeat before the first sweep so a fresh start (or a
+        # restart) is never briefly indistinguishable from a wedge — otherwise
+        # a watchdog firing in the ~one-sweep startup window false-alarms.
+        if args.heartbeat_file:
+            _write_heartbeat(args.heartbeat_file, "STARTING", 0, "starting")
         try:
             while True:
                 sweep_t0 = time.monotonic()
