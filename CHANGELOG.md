@@ -5,6 +5,13 @@ All notable changes to `wdgwars-api-tester`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.2] - Watchdog log wording
+
+`--check-stale`'s healthy log line reused the staleness phrasing, reading e.g.
+`last heartbeat 3s ago (>16200s)` on success — confusing. It now reads `(within
+16200s threshold)` when fresh and `(over … threshold)` when stale. Log text
+only; no behavior change.
+
 ## [0.13.1] - Startup heartbeat
 
 `--watch` now writes a `status=starting` heartbeat before the first sweep when

@@ -25,7 +25,7 @@ Quickstart:
 """
 from __future__ import annotations
 
-__version__ = "0.13.1"
+__version__ = "0.13.2"
 GITHUB_URL = "https://github.com/HiroAlleyCat/wdgwars-api-tester"
 
 import argparse
@@ -1418,7 +1418,8 @@ def _check_stale(path: Optional[Path], max_age: float,
     else:
         age = now - int(hb.get("ts", 0))
         stale = age > max_age
-        reason = (f"last heartbeat {age}s ago (>{max_age:.0f}s), "
+        rel = "over" if stale else "within"
+        reason = (f"last heartbeat {age}s ago ({rel} {max_age:.0f}s threshold), "
                   f"status={hb.get('status', '?')}")
     if not stale:
         log.info("watchdog: OK — %s", reason)

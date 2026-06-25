@@ -66,6 +66,29 @@ class CheckStale(unittest.TestCase):
         self.assertEqual(_check_stale(None, 300, None), 1)
 
 
+class CheckStaleLogWording(unittest.TestCase):
+    def _hb(self, d: str, age_s: int) -> Path:
+        hb = Path(d) / "hb.json"
+        hb.write_text(json.dumps({"ts": int(time.time()) - age_s,
+                                  "overall": "DEGRADED", "status": "ok"}),
+                      encoding="utf-8")
+        return hb
+
+    def test_fresh_logs_within_not_gt(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertLogs(level="INFO") as cm:
+                _check_stale(self._hb(d, 30), 300, None)
+            line = " ".join(cm.output)
+            self.assertIn("within 300s threshold", line)
+            self.assertNotIn(">300s", line)
+
+    def test_stale_logs_over(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertLogs(level="ERROR") as cm:
+                _check_stale(self._hb(d, 9000), 300, None)
+            self.assertIn("over 300s threshold", " ".join(cm.output))
+
+
 class WedgePayload(unittest.TestCase):
     def test_payload_has_discord_content(self) -> None:
         p = _format_wedge_payload(Path("/x/hb.json"), 9000, 300.0,
