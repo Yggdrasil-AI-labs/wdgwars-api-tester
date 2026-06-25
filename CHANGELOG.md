@@ -5,6 +5,40 @@ All notable changes to `wdgwars-api-tester`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - Watch-loop wedge protection
+
+The `--watch` loop could freeze indefinitely without dying. `--timeout` is a
+per-socket-read timeout, not a total deadline, so a response that trickles
+bytes (or a half-open connection a CDN keeps warm) blocks `resp.read()`
+forever. The single-threaded loop then stops sweeping while the process stays
+`active (running)` — alerting silently dies but `systemctl is-active` looks
+healthy. Observed in the field: a watch instance went silent for 8 days after
+wedging mid-sweep, with `is-active` reporting `active` the whole time.
+
+Two defenses, plus an external watchdog hook:
+
+### Added
+
+- `--sweep-deadline SECONDS` (default 180, 0 disables) — hard wall-clock ceiling
+  on a single sweep in `--watch` mode. A sweep that exceeds it is abandoned and
+  the loop continues; the stuck worker is left to drain and the internal
+  one-slot executor is recreated so the next sweep is never queued behind it.
+- `--heartbeat-file PATH` — in `--watch` mode, atomically writes a JSON
+  heartbeat (`ts`, `overall`, `sweep_ms`, `status`, `pid`) after every sweep,
+  including abandoned ones (`status=stalled`). Lets an external watchdog tell a
+  healthy-but-quiet loop from a wedged one — state-log freshness can't, since it
+  only grows on transitions.
+- `--check-stale SECONDS` — one-shot watchdog mode. Reads `--heartbeat-file` and
+  exits 1 if the newest heartbeat is older than `SECONDS` (or missing), else 0.
+  With `--alert-webhook`, also POSTs a wedge alert. Mutually exclusive with
+  `--watch`/`--digest`; intended for a short systemd timer guarding the loop.
+
+### Tests
+
+- `test_watchdog.py` — heartbeat round-trip, staleness thresholds, missing-file
+  handling, wedge-payload shape (asserts no host identifiers leak), and the
+  `--check-stale` exit-code contract via `main()`.
+
 ## [Unreleased] - CI quality gates + security review
 
 Tooling and CI only — no change to `wdgwars_api_tester.py` behavior, so no

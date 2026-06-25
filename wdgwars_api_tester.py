@@ -25,10 +25,11 @@ Quickstart:
 """
 from __future__ import annotations
 
-__version__ = "0.12.3"
+__version__ = "0.13.0"
 GITHUB_URL = "https://github.com/HiroAlleyCat/wdgwars-api-tester"
 
 import argparse
+import concurrent.futures
 import datetime
 import hashlib
 import io
@@ -1339,6 +1340,97 @@ def _post_webhook(url: str, payload: dict, timeout: float = 10.0) -> bool:
         return False
 
 
+# ───────────────────────── Watch-loop heartbeat + wedge watchdog (v0.13.0) ─────
+#
+# `--timeout` is a per-socket-read timeout, not a total deadline. A response
+# that trickles bytes (or a half-open connection a CDN keeps warm with periodic
+# activity) can block `resp.read()` indefinitely, freezing the single-threaded
+# watch loop without ever raising. When that happens the loop stops sweeping but
+# the process stays `active (running)`, so `systemctl is-active` looks healthy
+# while alerting has silently died.
+#
+# Two defenses: `--sweep-deadline` bounds any one sweep at the loop level
+# (abandon + continue), and `--heartbeat-file` records that the loop completed a
+# cycle so an external `--check-stale` one-shot can tell "alive but quiet"
+# (heartbeat fresh, no state-log growth during steady state) from "wedged"
+# (heartbeat stale). State-log freshness alone can't: it only grows on
+# transitions, so a healthy steady-state loop looks identical to a dead one.
+
+def _write_heartbeat(path: Path, overall: str, sweep_ms: int,
+                     status: str) -> None:
+    """Atomically write a watch-loop heartbeat after every sweep.
+
+    status is "ok" for a completed sweep or "stalled" for one abandoned by
+    --sweep-deadline (the loop is still alive and cycling, so the watchdog
+    should not fire on a single stall; repeated stalls show as a stale ts).
+    """
+    rec = {
+        "ts": int(time.time()),
+        "ts_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "overall": overall,
+        "sweep_ms": sweep_ms,
+        "status": status,
+        "tool": "wdgwars-api-tester",
+        "version": __version__,
+        "pid": os.getpid(),
+    }
+    try:
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(rec), encoding="utf-8")
+        tmp.replace(path)
+    except OSError as e:
+        log.warning("heartbeat write failed (%s): %s", path, e)
+
+
+def _read_heartbeat(path: Path) -> Optional[dict]:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _format_wedge_payload(path: Optional[Path], age: Optional[int],
+                          max_age: float, hb: Optional[dict]) -> dict:
+    """Webhook body for a wedged/stale watch loop. Tool-neutral, no host IDs."""
+    if age is None:
+        detail = (f"no readable heartbeat at {path}" if path
+                  else "no heartbeat file configured")
+    else:
+        detail = (f"last heartbeat {age}s ago (threshold {max_age:.0f}s); "
+                  f"last status={hb.get('status', '?')}, "
+                  f"overall={hb.get('overall', '?')}")
+    msg = (f"⚠️ [CRITICAL] wdgwars-api-tester: WATCH LOOP STALLED\n"
+           f"The continuous probe has stopped sweeping — {detail}.\n"
+           f"→ API health monitoring is not updating. Restart the watch service.")
+    return {"content": msg, "text": msg}
+
+
+def _check_stale(path: Optional[Path], max_age: float,
+                 webhook_urls: Optional[list]) -> int:
+    """One-shot watchdog. Returns 0 if the loop is fresh, 1 if stale/missing."""
+    now = int(time.time())
+    hb = _read_heartbeat(path) if path else None
+    if hb is None:
+        age: Optional[int] = None
+        stale = True
+        reason = (f"heartbeat file missing or unreadable: {path}" if path
+                  else "no --heartbeat-file given")
+    else:
+        age = now - int(hb.get("ts", 0))
+        stale = age > max_age
+        reason = (f"last heartbeat {age}s ago (>{max_age:.0f}s), "
+                  f"status={hb.get('status', '?')}")
+    if not stale:
+        log.info("watchdog: OK — %s", reason)
+        return 0
+    log.error("watchdog: STALE — watch loop wedged or down. %s", reason)
+    for url in (webhook_urls or []):
+        ok = _post_webhook(url, _format_wedge_payload(path, age, max_age, hb))
+        log.info("  wedge-alert webhook: %s (%s)",
+                 "sent" if ok else "FAILED", _redact_webhook_url(url))
+    return 1
+
+
 # ───────────────────────── State-log + morning digest (v0.10.0) ────────────────
 #
 # The `--watch` loop optionally appends every state change to a JSONL state
@@ -1811,8 +1903,35 @@ def main(argv: Optional[list[str]] = None) -> int:
                    "backoff. Capped further by time-to-next-midnight-UTC "
                    "since LOCOSP's documented daily quota resets at 00:00 "
                    "UTC. Default 3600 (1h).")
+    p.add_argument("--sweep-deadline", type=float, default=180.0,
+                   help="In --watch mode, hard wall-clock ceiling (seconds) on a "
+                   "single sweep. --timeout is per-socket-read, not a total "
+                   "deadline, so a trickling/half-open response can freeze a "
+                   "sweep indefinitely; this bounds it. A sweep that exceeds the "
+                   "deadline is abandoned and the loop continues. Default 180. "
+                   "Set 0 to disable.")
+    p.add_argument("--heartbeat-file", type=Path, default=None,
+                   help="In --watch mode, write a JSON heartbeat (ts, overall, "
+                   "sweep_ms, status) to this path after every sweep, including "
+                   "abandoned ones (status=stalled). Lets an external "
+                   "--check-stale watchdog distinguish a healthy-but-quiet loop "
+                   "from a wedged one. No-op outside --watch.")
+    p.add_argument("--check-stale", type=float, default=None, metavar="SECONDS",
+                   help="One-shot watchdog: read --heartbeat-file and exit 1 if "
+                   "its newest heartbeat is older than SECONDS (or missing), "
+                   "else exit 0. With --alert-webhook, also POST a wedge alert. "
+                   "Mutually exclusive with --watch/--digest. Intended for a "
+                   "short systemd timer guarding the watch loop.")
     p.add_argument("--version", action="version", version=__version__)
     args = p.parse_args(argv)
+
+    if args.check_stale is not None:
+        if args.watch or args.digest:
+            log.error("--check-stale is a one-shot watchdog; not compatible "
+                      "with --watch or --digest.")
+            return 2
+        return _check_stale(args.heartbeat_file, args.check_stale,
+                            args.alert_webhook)
 
     if args.hosts == "apex":
         hosts = DEFAULT_HOSTS
@@ -1904,9 +2023,39 @@ def main(argv: Optional[list[str]] = None) -> int:
                  "(also capped at next midnight UTC)",
                  args.outage_backoff_threshold * 100.0,
                  args.outage_backoff_cap_seconds)
+        deadline = args.sweep_deadline if args.sweep_deadline > 0 else None
+        if deadline:
+            log.info("sweep deadline: %.0fs hard ceiling per sweep", deadline)
+        # max_workers=1 keeps one sweep in flight. On a deadline abandonment the
+        # stuck worker is left to drain and the pool is recreated, so the next
+        # submit is never queued behind a wedged read.
+        sweep_pool = (concurrent.futures.ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="sweep") if deadline else None)
         try:
             while True:
-                results, s, _sig = one_pass()
+                sweep_t0 = time.monotonic()
+                if sweep_pool is not None:
+                    fut = sweep_pool.submit(one_pass)
+                    try:
+                        results, s, _sig = fut.result(timeout=deadline)
+                    except concurrent.futures.TimeoutError:
+                        sweep_ms = int((time.monotonic() - sweep_t0) * 1000)
+                        log.error(
+                            "sweep exceeded --sweep-deadline %.0fs and was "
+                            "abandoned (a probe likely hit a trickling or "
+                            "half-open response); watch loop continuing.",
+                            deadline)
+                        if args.heartbeat_file:
+                            _write_heartbeat(args.heartbeat_file,
+                                             last_overall or "UNKNOWN",
+                                             sweep_ms, "stalled")
+                        sweep_pool.shutdown(wait=False)
+                        sweep_pool = concurrent.futures.ThreadPoolExecutor(
+                            max_workers=1, thread_name_prefix="sweep")
+                        time.sleep(args.watch)
+                        continue
+                else:
+                    results, s, _sig = one_pass()
                 overall = s["overall"]
                 if last_results is None:
                     # First pass: print full table so the operator sees the
@@ -1976,6 +2125,10 @@ def main(argv: Optional[list[str]] = None) -> int:
                                           suppress, reason if suppress else "")
                 last_results = results
                 last_overall = overall
+                if args.heartbeat_file:
+                    _write_heartbeat(
+                        args.heartbeat_file, overall,
+                        int((time.monotonic() - sweep_t0) * 1000), "ok")
 
                 # Outage-aware backoff: if a meaningful share of this sweep
                 # came back 429 or transport-error, the LOCOSP daily quota

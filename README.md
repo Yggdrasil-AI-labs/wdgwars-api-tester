@@ -169,6 +169,31 @@ python3 wdgwars_api_tester.py --watch 1800 \
 
 `DEAD`, `AUTH-REQUIRED`, `AUTH-REDIRECT`, and other expected non-OK verdicts do NOT count toward the outage share — only `429` and transport-level `ERROR` do.
 
+## Liveness watchdog
+
+`--timeout` is a per-socket-read timeout, not a total deadline. A response that trickles bytes (or a half-open connection a CDN keeps warm) can block a read forever, freezing the single-threaded `--watch` loop while the process stays alive — so `systemctl is-active` reports `active` while alerting has silently died.
+
+Two layers guard against this:
+
+- `--sweep-deadline SECONDS` (default 180, `0` disables): hard wall-clock ceiling on a single sweep. A sweep that exceeds it is abandoned and the loop continues with the next interval.
+- `--heartbeat-file PATH`: writes a small JSON heartbeat after every sweep (including abandoned ones, tagged `status=stalled`). An external watchdog reads it to tell a healthy-but-quiet loop from a wedged one — state-log freshness can't, because it only grows on transitions.
+
+`--check-stale SECONDS` is a one-shot watchdog: it reads the heartbeat file and exits `1` if the newest heartbeat is older than `SECONDS` (or missing), else `0`. With `--alert-webhook` it also POSTs a wedge alert. Run it from a short timer alongside the watch service:
+
+```bash
+# the watch service writes a heartbeat every sweep
+python3 wdgwars_api_tester.py --watch 1800 \
+  --heartbeat-file ./state/heartbeat.json \
+  --sweep-deadline 300
+
+# a separate timer (e.g. every 15 min) alarms if the loop goes quiet
+python3 wdgwars_api_tester.py --check-stale 5400 \
+  --heartbeat-file ./state/heartbeat.json \
+  --alert-webhook "$WEDGE_WEBHOOK"
+```
+
+Pick `--check-stale` at a comfortable multiple of `--watch` (here ~3×) so a single slow sweep doesn't trip a false alarm.
+
 ## Notification channels
 
 `--watch` mode supports three independent notification paths. Use one, two, or all three at once — they don't conflict.
