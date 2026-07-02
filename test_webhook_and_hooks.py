@@ -1,11 +1,18 @@
 """Tests for _post_webhook, the _exec_on_change error branches, the
-_check_stale webhook fan-out, and diff_against_baseline.
+_check_stale webhook fan-out, diff_against_baseline, and a handful of small
+pure helpers (_write_heartbeat's OSError branch, _redact_webhook_url's
+exception branch, load_key, and the no-arg branch of
+_seconds_to_next_midnight_utc) that were still gaps after the first pass.
 
 These paths are exercised only on the happy path (or not at all) elsewhere:
 test_security.py drives _exec_on_change's rc=0 success path to lock in the
 env-var transport contract, but never its failure branches; test_watchdog.py
-drives _check_stale with webhook_urls=None, never the alert fan-out; and
-nothing calls _post_webhook or diff_against_baseline directly. Kept pure/
+drives _check_stale with webhook_urls=None, never the alert fan-out, and
+covers _write_heartbeat/_read_heartbeat/_format_wedge_payload's normal
+paths but not _write_heartbeat's OSError branch; test_outage_backoff.py
+covers _seconds_to_next_midnight_utc but always passes an explicit `now`,
+never exercising the `now is None -> time.time()` branch; and nothing calls
+_post_webhook, diff_against_baseline, or load_key directly. Kept pure/
 offline — urllib.request.urlopen and subprocess.run are mocked, never called
 for real.
 
@@ -26,7 +33,12 @@ from wdgwars_api_tester import (
     _check_stale,
     _exec_on_change,
     _post_webhook,
+    _read_heartbeat,
+    _redact_webhook_url,
+    _seconds_to_next_midnight_utc,
+    _write_heartbeat,
     diff_against_baseline,
+    load_key,
 )
 
 
@@ -262,6 +274,74 @@ class TestDiffAgainstBaseline(unittest.TestCase):
             ]}), encoding="utf-8")
             diffs = diff_against_baseline([self._result()], p)
             self.assertEqual(diffs, [])
+
+
+class TestWriteHeartbeatOSError(unittest.TestCase):
+    def test_write_failure_is_caught_and_logged(self) -> None:
+        # path.with_suffix()/write_text()/replace() all live on the real
+        # Path object; patch Path.write_text so the write itself raises,
+        # proving the OSError branch swallows the error instead of
+        # propagating it and killing the watch loop.
+        with tempfile.TemporaryDirectory() as d:
+            hb = Path(d) / "hb.json"
+            with mock.patch("pathlib.Path.write_text",
+                            side_effect=OSError("disk full")):
+                with self.assertLogs(level="WARNING") as cm:
+                    _write_heartbeat(hb, "HEALTHY", 42, "ok")
+            self.assertIn("heartbeat write failed", " ".join(cm.output))
+            # No partial/garbage file left behind by the failed write.
+            self.assertFalse(hb.exists())
+
+
+class TestRedactWebhookUrlExceptionBranch(unittest.TestCase):
+    def test_urlparse_raising_falls_back_to_unparseable(self) -> None:
+        # The existing edge-case tests (empty string, "not a url", etc.)
+        # never actually hit the except branch because urllib.parse is
+        # lenient about garbage strings. Force the branch directly.
+        with mock.patch("wdgwars_api_tester.urllib.parse.urlparse",
+                        side_effect=ValueError("boom")):
+            out = _redact_webhook_url("https://example.com/hook")
+        self.assertEqual(out, "<unparseable-url>")
+
+
+class TestLoadKey(unittest.TestCase):
+    def test_cli_key_takes_priority(self) -> None:
+        self.assertEqual(load_key("  cli-key  "), "cli-key")
+
+    def test_env_var_used_when_no_cli_key(self) -> None:
+        with mock.patch.dict("os.environ",
+                             {"WDGWARS_API_KEY": " env-key "}, clear=False):
+            self.assertEqual(load_key(None), "env-key")
+
+    def test_config_file_used_when_no_cli_or_env(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            fake_home = Path(d)
+            cfg_dir = fake_home / ".config" / "wigle-to-wdgwars"
+            cfg_dir.mkdir(parents=True)
+            (cfg_dir / "wdgwars.key").write_text(" file-key \n", encoding="utf-8")
+            with mock.patch.dict("os.environ", {}, clear=True):
+                with mock.patch("wdgwars_api_tester.Path.home",
+                                return_value=fake_home):
+                    self.assertEqual(load_key(None), "file-key")
+
+    def test_returns_none_when_nothing_configured(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            fake_home = Path(d)  # no .config/wigle-to-wdgwars/wdgwars.key
+            with mock.patch.dict("os.environ", {}, clear=True):
+                with mock.patch("wdgwars_api_tester.Path.home",
+                                return_value=fake_home):
+                    self.assertIsNone(load_key(None))
+
+
+class TestSecondsToNextMidnightDefaultNow(unittest.TestCase):
+    def test_no_arg_uses_current_time(self) -> None:
+        # test_outage_backoff.py always passes an explicit `now`; this
+        # covers the `now is None -> time.time()` branch specifically.
+        fixed = 1_800_000_000.0  # arbitrary fixed epoch, not near midnight
+        with mock.patch("wdgwars_api_tester.time.time", return_value=fixed):
+            via_default = _seconds_to_next_midnight_utc()
+        via_explicit = _seconds_to_next_midnight_utc(fixed)
+        self.assertEqual(via_default, via_explicit)
 
 
 if __name__ == "__main__":
