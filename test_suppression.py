@@ -195,5 +195,56 @@ class TestShouldSuppressAlert(unittest.TestCase):
         self.assertIn("unclassified", reason)
 
 
+class TestOutageShareOverridesSuppression(unittest.TestCase):
+    """A real outage must never be classified away as upstream flap just
+    because `overall` was already sitting on the same bucket (e.g. DEGRADED
+    for weeks) when the outage hit. See BrainVault Meta note on wdgo-health
+    silence: the LOCOSP mirror only hears about state that reaches this
+    function as non-suppressed, so this is the "is the API down" gate."""
+
+    def _summary(self, **kw) -> dict:
+        base = {"improved": 0, "regressed": 0, "sideways": 0,
+                "upstream_flap_count": 0, "total_classified": 0,
+                "unclassified": 0}
+        base.update(kw)
+        return base
+
+    def test_outage_share_at_threshold_overrides_a_would_be_suppression(self):
+        # Same shape as test_all_flaps_no_net_regression_suppresses, which
+        # normally suppresses -- but a 50% outage share must win.
+        s = self._summary(upstream_flap_count=4, total_classified=4,
+                          improved=2, regressed=2)
+        suppress, reason = _should_suppress_alert(
+            "DEGRADED", "DEGRADED", s, outage_share=0.5, outage_threshold=0.30)
+        self.assertFalse(suppress)
+        self.assertIn("outage-share", reason)
+
+    def test_outage_share_below_threshold_preserves_existing_behavior(self):
+        s = self._summary(upstream_flap_count=4, total_classified=4,
+                          improved=2, regressed=2)
+        suppress, reason = _should_suppress_alert(
+            "DEGRADED", "DEGRADED", s, outage_share=0.1, outage_threshold=0.30)
+        self.assertTrue(suppress)
+        self.assertIn("upstream flap", reason)
+
+    def test_default_params_preserve_old_call_signature(self):
+        # Existing callers (and the 90/90 suite predating this change) call
+        # with 3 positional args -- defaults must be a no-op.
+        s = self._summary(upstream_flap_count=3, total_classified=3,
+                          improved=3)
+        suppress, _ = _should_suppress_alert("DEGRADED", "DEGRADED", s)
+        self.assertTrue(suppress)
+
+    def test_outage_share_wins_even_on_overall_state_change(self):
+        # Belt-and-suspenders: outage-share check runs first, so its reason
+        # takes priority even when the overall-changed check would also fire.
+        s = self._summary(upstream_flap_count=3, total_classified=3,
+                          improved=3)
+        suppress, reason = _should_suppress_alert(
+            "HEALTHY", "OUTAGE", s, outage_share=0.8, outage_threshold=0.30)
+        self.assertFalse(suppress)
+        self.assertIn("outage-share", reason)
+
+
 if __name__ == "__main__":
     unittest.main()

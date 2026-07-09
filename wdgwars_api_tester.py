@@ -909,15 +909,25 @@ def _annotate_deltas(deltas: list[str]) -> tuple[list[str], dict]:
 
 
 def _should_suppress_alert(prev_overall: str, curr_overall: str,
-                            delta_summary: dict) -> tuple[bool, str]:
+                            delta_summary: dict,
+                            outage_share: float = 0.0,
+                            outage_threshold: float = 1.0) -> tuple[bool, str]:
     """Decide whether to suppress the webhook + exec-on-change for this tick.
 
     Suppress when:
       - overall state didn't change AND
       - all classified deltas are upstream flaps AND
       - net direction isn't getting worse (regressed <= improved)
+    Never suppress when this sweep's outage_share (fraction of 429/transport-
+    error verdicts, the same signal --watch uses for outage-aware backoff)
+    meets outage_threshold — a real outage must never be classified away as
+    upstream flap just because `overall` hadn't moved yet.
     Returns (suppress: bool, reason: str).
     """
+    if outage_share >= outage_threshold:
+        return False, (f"outage-share {outage_share:.0%} >= "
+                        f"{outage_threshold:.0%} threshold (real outage, "
+                        "never suppress)")
     if prev_overall != curr_overall:
         return False, "overall state changed"
     if delta_summary["unclassified"] > 0:
@@ -2094,7 +2104,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                                  "sent" if ok else "FAILED")
                     _, _dsum = _annotate_deltas(deltas)
                     suppress, reason = _should_suppress_alert(
-                        last_overall, overall, _dsum)
+                        last_overall, overall, _dsum,
+                        _outage_share(results), args.outage_backoff_threshold)
                     if suppress:
                         log.info("  alert SUPPRESSED: %s", reason)
                         if args.silent_webhook:
