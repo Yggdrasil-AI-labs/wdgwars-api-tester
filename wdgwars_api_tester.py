@@ -25,8 +25,8 @@ Quickstart:
 """
 from __future__ import annotations
 
-__version__ = "0.13.2"
-GITHUB_URL = "https://github.com/HiroAlleyCat/wdgwars-api-tester"
+__version__ = "0.13.3"
+GITHUB_URL = "https://github.com/Yggdrasil-AI-labs/wdgwars-api-tester"
 
 import argparse
 import concurrent.futures
@@ -306,6 +306,22 @@ class Result:
     leak_marker: str = ""
 
 
+def _excerpt(body: bytes, valid_key: Optional[str]) -> str:
+    """First 200 chars of the response body for human debugging, with the
+    real API key scrubbed if the server ever echoes it back.
+
+    Excerpts travel into webhook / Telegram alert payloads and the JSON
+    snapshot, so an echoed key would otherwise fan out to every configured
+    alert channel. Scrub happens before truncation so a key straddling the
+    200-char boundary can't survive as a recognisable prefix."""
+    if not body:
+        return ""
+    text = body.decode("utf-8", "replace")
+    if valid_key:
+        text = text.replace(valid_key, "[REDACTED-KEY]")
+    return text[:200]
+
+
 def _v2_upload_csv_round_trip(probe: Probe, host: str, auth: str,
                               valid_key: Optional[str],
                               timeout: float) -> "Result":
@@ -463,7 +479,7 @@ def _v2_upload_csv_round_trip(probe: Probe, host: str, auth: str,
         server=resp_headers.get("server", ""),
         error=err,
         location=resp_headers.get("location", ""),
-        body_excerpt=body[:200].decode("utf-8", "replace") if body else "",
+        body_excerpt=_excerpt(body, valid_key),
         leak_marker=next(
             (f for f in LSWS_LEAK_FINGERPRINTS if f.encode() in body),
             "",
@@ -531,7 +547,7 @@ def _request(probe: Probe, host: str, auth: str, valid_key: Optional[str],
         server=resp_headers.get("server", ""),
         error=err,
         location=resp_headers.get("location", ""),
-        body_excerpt=body[:200].decode("utf-8", "replace") if body else "",
+        body_excerpt=_excerpt(body, valid_key),
         leak_marker=next(
             (f for f in LSWS_LEAK_FINGERPRINTS if f.encode() in body),
             "",

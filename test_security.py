@@ -79,5 +79,34 @@ class ExecOnChangeEnvTransportTests(unittest.TestCase):
         self.assertEqual(json.loads(env["WDGWARS_VERDICTS"]), {"DOWN`whoami`": 2})
 
 
+class BodyExcerptKeyScrubTests(unittest.TestCase):
+    """Excerpts travel into webhook/Telegram alert payloads and the JSON
+    snapshot; a server error that echoes the API key back must never
+    survive into them (v0.13.3)."""
+
+    KEY = "a" * 32
+
+    def test_echoed_key_is_scrubbed(self):
+        body = f'{{"error":"bad key {self.KEY} rejected"}}'.encode()
+        excerpt = t._excerpt(body, self.KEY)
+        self.assertNotIn(self.KEY, excerpt)
+        self.assertIn("[REDACTED-KEY]", excerpt)
+
+    def test_key_straddling_truncation_boundary_is_scrubbed(self):
+        # Scrub must happen BEFORE the 200-char cut, or the first bytes of
+        # a key sitting across the boundary would survive as a prefix.
+        body = (b"x" * 190) + self.KEY.encode() + b"tail"
+        excerpt = t._excerpt(body, self.KEY)
+        self.assertNotIn(self.KEY[:16], excerpt)
+
+    def test_no_key_and_empty_body_are_safe(self):
+        self.assertEqual(t._excerpt(b"", self.KEY), "")
+        self.assertEqual(t._excerpt(b"plain body", None), "plain body")
+
+    def test_excerpt_still_carries_diagnostic_json(self):
+        body = b'{"error":"payload-too-large","max_bytes":15728640}'
+        self.assertIn('"error":"payload-too-large"', t._excerpt(body, None))
+
+
 if __name__ == "__main__":
     unittest.main()

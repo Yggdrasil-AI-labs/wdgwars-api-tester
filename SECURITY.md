@@ -25,9 +25,11 @@ That's the entire outbound footprint.
   use. There is no version-check probe (yet); when one is added, it
   will be gated by `--no-version-check` to match the rest of the
   WDGoWars feeder family.
-- No `eval`, no `exec`, no `shell=True`. `--exec-on-change` invokes
-  `subprocess.run(cmd, shell=True)` ONLY for the command the operator
-  passed on the CLI — see "Exec-on-change" below for the threat model.
+- No `eval`, no `exec`. The single `shell=True` subprocess call is
+  `--exec-on-change`, and it runs ONLY the command the operator passed
+  on the CLI — network-derived state reaches it via `WDGWARS_*` env
+  vars, never interpolated into the command string. See
+  "Exec-on-change" below for the threat model.
 - No remote code execution at runtime. The probe is single-file
   stdlib-only Python; no PyPI install step, no runtime dependency
   fetch.
@@ -45,8 +47,10 @@ That's the entire outbound footprint.
   `ssl.create_default_context()` default — system trust store,
   hostname verification on, TLS 1.2+.
 - The key is never logged. Verdict output includes only HTTP status,
-  Content-Type, and a body excerpt that is scrubbed of any substring
-  matching the key.
+  Content-Type, and a body excerpt; since v0.13.3 the excerpt is
+  scrubbed of the real key (replaced with `[REDACTED-KEY]`) before
+  truncation, in case a server error ever echoes it back — excerpts
+  travel into webhook/Telegram alert payloads.
 - The `--variants none,garbage,valid` flag controls which auth
   variants get exercised. `garbage` sends an obvious sentinel string,
   never the real key; `valid` sends the real key only when the user

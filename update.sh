@@ -14,7 +14,7 @@ if ! python3 -c "import sys; sys.exit(0 if sys.version_info >= (3,8) else 1)" 2>
 fi
 
 echo "[1/1] Refreshing wdgwars_api_tester.py from GitHub..."
-python3 -c "import urllib.request as u; u.urlretrieve('https://raw.githubusercontent.com/HiroAlleyCat/wdgwars-api-tester/main/wdgwars_api_tester.py', 'wdgwars_api_tester.py')"
+python3 -c "import urllib.request as u; u.urlretrieve('https://raw.githubusercontent.com/Yggdrasil-AI-labs/wdgwars-api-tester/main/wdgwars_api_tester.py', 'wdgwars_api_tester.py')"
 
 echo
 echo "Updated. Current version:"

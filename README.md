@@ -87,6 +87,9 @@ If no key is found, the `valid` variant is dropped automatically and only the
 |---|---|---|---|---|
 | `api-root` | GET | `/api/` | no | Baseline shape of the /api/ subtree. |
 | `me` | GET | `/api/me` | yes | Identity. Unauth → 401, not 404. |
+| `badge-catalog` | GET | `/api/badge-catalog` | yes | Static badge list. |
+| `team-id` | GET | `/api/team/1` | yes | Team lookup by numeric id (`--team-id` to change). |
+| `team-me` | GET | `/api/team/me` | yes | Caller's own gang. |
 | `upload-history` | GET | `/api/upload-history?limit=5` | yes | Added 2026-04-27. |
 | `upload-csv` | POST | `/api/upload-csv` | yes | Multipart WiGLE-1.6, mixed Types. |
 | `v2-upload-csv` | POST + GET | `/api/v2/upload-csv` → `/api/v2/upload-job/<id>` | yes | Async pipeline: POST 202 → poll until `done`/`failed` (6 polls @ 1s). Catches v2-parser regressions independent of v1. |
@@ -96,6 +99,9 @@ If no key is found, the `valid` variant is dropped automatically and only the
 | `meshcore` | GET | `/api/meshcore` | yes | MeshCore live snapshot (top-level array). |
 | `territories` | GET | `/api/territories` | yes | Global gang convex hulls (top-level array). |
 | `member-territories` | GET | `/api/member-territories` | yes | Cell-based grid + gang hulls. 5-min snapshot. |
+| `member-territories-compact` | GET | `/api/member-territories?compact=1` | yes | Compact-mode variant of the grid payload. |
+| `member-territories-bbox` | GET | `/api/member-territories?compact=1&bbox=…&zoom=8` | yes | Viewport-filtered variant (bbox + zoom). |
+| `member-territories-zoom-skip` | GET | `/api/member-territories?zoom=5` | yes | Low-zoom cell-skip variant. |
 | `leaderboard` | GET | `/api/leaderboard` | yes | 5 boards. 5-min snapshot. |
 | `bounties` | GET | `/api/bounties` | yes | Open bounties (max 200). Was 404 from 2026-06-03 onwards on the same regex-cascade bug as the original five handlers; fixed 2026-06-04. |
 | `team-messages` | GET | `/api/team/messages` | yes | Caller's gang messages list. |
@@ -275,7 +281,7 @@ The full payload:
   "by_verdict_human": ["13 endpoints healthy", "27 correctly rejecting ...", "..."],
   "action": "Non-upstream probe regressed. Investigate.",
   "tool": "wdgwars-api-tester",
-  "version": "0.10.0"
+  "version": "0.13.3"
 }
 ```
 
@@ -378,7 +384,7 @@ Two suites, both stdlib only.
 python3 -m unittest test_wdgwars_api_tester
 ```
 
-32 tests, no network. Covers verdict annotation, quorum sentinel logic, state signature stability, summary rollup, probe delta detection, Telegram message formatting, and webhook payload shape. Runs in under a second.
+~215 tests across nine suites, no network. Covers verdict annotation, quorum sentinel logic, state signature stability, summary rollup, probe delta detection, alert suppression, outage backoff, watch-loop wedge protection and heartbeat/watchdog, digest, Telegram message formatting, webhook payload shape, and the exec-on-change env-transport security contract. Runs in a few seconds.
 
 ### Integration tests (offline by default)
 

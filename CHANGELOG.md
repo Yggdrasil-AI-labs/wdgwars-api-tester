@@ -5,6 +5,29 @@ All notable changes to `wdgwars-api-tester`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.3] - 2026-07-18 - Body-excerpt key scrub + org migration
+
+### Fixed
+
+- **Body excerpts are now scrubbed of the real API key** before truncation
+  (`[REDACTED-KEY]`), making SECURITY.md's long-standing claim true. Excerpts
+  travel into webhook/Telegram alert payloads and the `--json` snapshot, so a
+  server error echoing the key back would have fanned it out to every
+  configured alert channel. Scrub-before-truncate also kills the
+  key-straddles-the-200-char-boundary case. Locked by new
+  `BodyExcerptKeyScrubTests` in test_security.py.
+- **Org migration completed in code**: `GITHUB_URL` (advertised in the
+  User-Agent) and the raw URLs in `update.sh`/`update.bat` now point at
+  `Yggdrasil-AI-labs` instead of surviving on GitHub's rename redirect from
+  the old `HiroAlleyCat` owner.
+- **Docs told the truth again**: SECURITY.md's self-contradictory "No
+  `shell=True`" bullet now accurately describes the one deliberate
+  `--exec-on-change` shell hook and its env-var data transport. README's
+  probe table gains the six rows it was missing (badge-catalog, team-id,
+  team-me, and the three member-territories variants), the "32 tests" claim
+  is corrected to the ~215 that exist, and the webhook payload example no
+  longer claims v0.10.0.
+
 ## [0.13.2] - Watchdog log wording
 
 `--check-stale`'s healthy log line reused the staleness phrasing, reading e.g.
@@ -54,10 +77,11 @@ Two defenses, plus an external watchdog hook:
   handling, wedge-payload shape (asserts no host identifiers leak), and the
   `--check-stale` exit-code contract via `main()`.
 
-## [Unreleased] - CI quality gates + security review
+## CI quality gates + security review (tooling-only, landed unversioned mid-0.13.x)
 
 Tooling and CI only — no change to `wdgwars_api_tester.py` behavior, so no
-version bump.
+version bump. (Header renamed from "[Unreleased]" in v0.13.3: the work has
+long been on `main` and the mid-file position kept confusing changelog reads.)
 
 Brings wdgwars-api-tester onto the same gated CI pipeline as the sibling
 feeder repos (Muninn, Heimdall, wigle-to-wdgwars): pytest + coverage →

@@ -12,7 +12,7 @@ if errorlevel 1 (
 )
 
 echo [1/1] Refreshing wdgwars_api_tester.py from GitHub...
-python -c "import urllib.request as u; u.urlretrieve('https://raw.githubusercontent.com/HiroAlleyCat/wdgwars-api-tester/main/wdgwars_api_tester.py', r'%~dp0wdgwars_api_tester.py')"
+python -c "import urllib.request as u; u.urlretrieve('https://raw.githubusercontent.com/Yggdrasil-AI-labs/wdgwars-api-tester/main/wdgwars_api_tester.py', r'%~dp0wdgwars_api_tester.py')"
 if errorlevel 1 (
     echo.
     echo Could not fetch wdgwars_api_tester.py. Check internet connection
