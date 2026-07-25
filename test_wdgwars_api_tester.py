@@ -206,7 +206,7 @@ class TestAnnotateVerdicts(unittest.TestCase):
     def test_redirect_fallback_when_not_login(self):
         # A 3xx whose Location does NOT point at /login is labeled with
         # the bare code so operators see it but it doesn't get mistaken
-        # for the WDGoWars-specific auth-redirect pattern.
+        # for the WDGWars-specific auth-redirect pattern.
         results = [
             _r("api-sentinel-404-a", status=404, body_md5="d"),
             _r("api-sentinel-404-b", status=404, body_md5="d"),

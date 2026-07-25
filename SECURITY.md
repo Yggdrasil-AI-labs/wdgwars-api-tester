@@ -24,7 +24,7 @@ That's the entire outbound footprint.
 - No telemetry or analytics. The probe never phones home about its own
   use. There is no version-check probe (yet); when one is added, it
   will be gated by `--no-version-check` to match the rest of the
-  WDGoWars feeder family.
+  WDGWars feeder family.
 - No `eval`, no `exec`. The single `shell=True` subprocess call is
   `--exec-on-change`, and it runs ONLY the command the operator passed
   on the CLI — network-derived state reaches it via `WDGWARS_*` env
@@ -39,7 +39,7 @@ That's the entire outbound footprint.
 
 ## API key handling
 
-- WDGoWars key resolution: `--key` flag, then `$WDGWARS_API_KEY`, then
+- WDGWars key resolution: `--key` flag, then `$WDGWARS_API_KEY`, then
   `~/.config/wigle-to-wdgwars/wdgwars.key` (the shared family config
   path; api-tester does not save its own).
 - The key is sent over HTTPS only, in the `X-API-Key` request header
@@ -58,7 +58,7 @@ That's the entire outbound footprint.
 
 ## What the API key can do
 
-The WDGoWars API key authorises the holder to submit observations
+The WDGWars API key authorises the holder to submit observations
 under the account it belongs to. If it leaks, an attacker could:
 
 - Submit fake Wi-Fi / BLE / mesh / aircraft captures under your name.
@@ -70,7 +70,7 @@ It cannot (as far as we know):
 - Withdraw money or make purchases.
 - Affect other users' accounts.
 
-If you suspect your key has leaked, rotate it on the WDGoWars site and
+If you suspect your key has leaked, rotate it on the WDGWars site and
 re-save it via `wigle-to-wdgwars --setup` (api-tester reads from the
 shared config path).
 
@@ -123,7 +123,7 @@ interpolated into the command string), and that behavior is now pinned by
 
 ## Reporting issues
 
-Open a GitHub issue, or DM the maintainer on the WDGoWars community
-channels. For anything potentially exploitable upstream (in WDGoWars
+Open a GitHub issue, or DM the maintainer on the WDGWars community
+channels. For anything potentially exploitable upstream (in WDGWars
 itself), please disclose privately to LOCOSP first rather than filing
 a public issue here.

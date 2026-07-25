@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""wdgwars-api-tester: systematic probe of the WDGoWars HTTP API surface.
+"""wdgwars-api-tester: systematic probe of the WDGWars HTTP API surface.
 
 Built to detect outages (e.g. the 2026-05-29 mass /api/* 404), distinguish
 "endpoint dead" from "auth rejected", and fingerprint the styled-404 page so a
@@ -654,7 +654,7 @@ def annotate_verdicts(results: list[Result]) -> None:
         elif r.status in (301, 302, 303, 307, 308) and "/login" in (r.location or ""):
             # API endpoint redirecting to the web-session login flow.
             # Distinct from AUTH-REQUIRED (which is the spec-correct 401
-            # JSON shape). Routing inconsistency in WDGoWars: some /api/*
+            # JSON shape). Routing inconsistency in WDGWars: some /api/*
             # paths return 401 JSON, others 302→login HTML. We surface it
             # without escalating to DEGRADED — the auth gate is working,
             # the response shape just isn't API-clean.
@@ -1837,7 +1837,7 @@ def _backoff_sleep_seconds(base: float, streak: int,
 def main(argv: Optional[list[str]] = None) -> int:
     p = argparse.ArgumentParser(
         prog="wdgwars-api-tester",
-        description="Probe the WDGoWars HTTP API surface and report verdicts.",
+        description="Probe the WDGWars HTTP API surface and report verdicts.",
     )
     p.add_argument("--hosts", default="apex",
                    help="apex = wdgwars.pl only (default); all = apex + www + "

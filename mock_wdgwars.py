@@ -233,7 +233,7 @@ class MockHandler(http.server.BaseHTTPRequestHandler):
     # Set on the server instance, read here. Defaults to 'outage'.
     scenario: str = "outage"
 
-    server_version = "Mock-WDGoWars/0.1"
+    server_version = "Mock-WDGWars/0.1"
 
     def log_message(self, fmt, *args):
         pass  # silent — integration tests are noisy enough

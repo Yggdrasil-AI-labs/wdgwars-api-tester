@@ -6,7 +6,7 @@
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-b08850.svg"></a>
 </p>
 
-Systematic probe of the **[WDGoWars](https://wdgwars.pl/)** HTTP API surface.
+Systematic probe of the **[WDGWars](https://wdgwars.pl/)** HTTP API surface.
 
 Built 2026-05-29 during the mass `/api/*` 404 outage. The point of this tool is
 to answer, in one command, the questions that took an hour of curl that day:
@@ -21,7 +21,7 @@ Stdlib-only Python 3. No `pip install`. Single file.
 
 ## Family
 
-Sibling repos in the WDGoWars feeder family:
+Sibling repos in the WDGWars feeder family:
 
 - [Muninn](https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars) — ADS-B feeder
 - [Heimdall](https://github.com/Yggdrasil-AI-labs/meshcore-to-wdgwars) — MeshCore LoRa feeder
