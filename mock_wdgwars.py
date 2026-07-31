@@ -2,19 +2,19 @@
 """mock_wdgwars: a local HTTP server that mimics wdgwars.pl's probe surface.
 
 Used by integration_test.py so the test suite doesn't hammer the real API.
-Also useful as a standalone learning tool — point the tester at this mock
+Also useful as a standalone learning tool, point the tester at this mock
 and see how each scenario maps to a verdict surface.
 
 Four scenarios:
 
-  outage    — the current real state: every /api/* returns the styled 404
+  outage, the current real state: every /api/* returns the styled 404
               page, /api/stats 200s with LSWS admin telemetry. Probe verdict
               surface should be DEGRADED+LEAK (or OUTAGE+LEAK with valid key).
-  healthy   — API is up: /api/me returns 200 with identity, /api/stats is
+  healthy. API is up: /api/me returns 200 with identity, /api/stats is
               explicitly blocked (404). Probe surface should be HEALTHY.
-  partial   — API is up but /api/stats is still leaking. Probe surface
+  partial. API is up but /api/stats is still leaking. Probe surface
               should be HEALTHY+LEAK.
-  diverged  — sentinel paths under /api/<random> return distinct bodies,
+  diverged. Sentinel paths under /api/<random> return distinct bodies,
               breaking the quorum. Probe surface should carry
               +SENTINEL-DIVERGED.
 
@@ -50,7 +50,7 @@ margin:0}.msg{color:#999;margin-top:1rem}</style></head><body>
 </body></html>
 """)
 
-# Django's bare 404 template — what real wdgwars.pl serves for paths outside
+# Django's bare 404 template - what real wdgwars.pl serves for paths outside
 # /api/*. Smaller, no inline CSS, has a Cloudflare beacon comment.
 BARE_404_BODY = b"<h1>404 Not Found</h1><!-- cf-beacon -->"
 
@@ -98,7 +98,7 @@ UPLOAD_CSV_OK_BODY = json.dumps({
     "merged_samples": 0,
 }).encode()
 
-# /api/me/aps — caller's own AP rows. Top-level {ok:true, count, aps:[...]}.
+# /api/me/aps - caller's own AP rows. Top-level {ok:true, count, aps:[...]}.
 ME_APS_OK_BODY = json.dumps({
     "ok": True,
     "count": 1,
@@ -108,7 +108,7 @@ ME_APS_OK_BODY = json.dumps({
              "type": "WIFI", "captured_at": "2026-05-30T00:00:00Z"}],
 }).encode()
 
-# /api/aircraft, /api/meshcore, /api/territories — top-level arrays per docs.
+# /api/aircraft, /api/meshcore, /api/territories - top-level arrays per docs.
 AIRCRAFT_OK_BODY = json.dumps([
     {"icao": "ABC123", "callsign": "MOCK1", "latitude": 41.0,
      "longitude": -81.0, "altitude_ft": 35000, "speed_kt": 450,
@@ -125,7 +125,7 @@ TERRITORIES_OK_BODY = json.dumps([
      "hull": [[41.0, -81.0], [41.1, -81.0], [41.0, -81.1]]},
 ]).encode()
 
-# /api/member-territories — {ok:true, grid_lat, grid_lng, cells:[], gang_hulls:[]}.
+# /api/member-territories - {ok:true, grid_lat, grid_lng, cells:[], gang_hulls:[]}.
 MEMBER_TERRITORIES_OK_BODY = json.dumps({
     "ok": True,
     "grid_lat": 0.02,
@@ -136,7 +136,7 @@ MEMBER_TERRITORIES_OK_BODY = json.dumps({
                      "hull": [[41.0, -81.0], [41.1, -81.0], [41.0, -81.1]]}],
 }).encode()
 
-# /api/leaderboard — 5 boards.
+# /api/leaderboard - 5 boards.
 LEADERBOARD_OK_BODY = json.dumps({
     "today": [{"user_id": 1, "username": "mock", "total": 1}],
     "week": [{"user_id": 1, "username": "mock", "total": 7}],
@@ -150,10 +150,10 @@ LEADERBOARD_OK_BODY = json.dumps({
     "limit": 25,
 }).encode()
 
-# /api/bounties — {bounties:[]} per docs.
+# /api/bounties - {bounties:[]} per docs.
 BOUNTIES_OK_BODY = json.dumps({"bounties": []}).encode()
 
-# /api/badge-catalog — curated 51-badge dictionary, 24h server cache.
+# /api/badge-catalog - curated 51-badge dictionary, 24h server cache.
 # Shipped 2026-06-03 in the LOCOSP CF-Transform-Rule batch.
 BADGE_CATALOG_OK_BODY = json.dumps({
     "ok": True,
@@ -165,7 +165,7 @@ BADGE_CATALOG_OK_BODY = json.dumps({
     ],
 }).encode()
 
-# /api/team/{id} — public team dossier. Top-level
+# /api/team/{id} - public team dossier. Top-level
 # {id, name, color, rank, created_at, members[]}.
 TEAM_ID_OK_BODY = json.dumps({
     "id": 1,
@@ -176,7 +176,7 @@ TEAM_ID_OK_BODY = json.dumps({
     "members": [{"user_id": 1, "username": "mock"}],
 }).encode()
 
-# /api/team/me — caller's team dossier (same backend as /api/team/{id}).
+# /api/team/me - caller's team dossier (same backend as /api/team/{id}).
 TEAM_ME_OK_BODY = json.dumps({
     "id": 1,
     "name": "MOCK",
@@ -186,20 +186,20 @@ TEAM_ME_OK_BODY = json.dumps({
     "members": [{"user_id": 1, "username": "mock"}],
 }).encode()
 
-# /api/team/messages — caller's gang messages list (no id).
+# /api/team/messages - caller's gang messages list (no id).
 TEAM_MESSAGES_OK_BODY = json.dumps({
     "ok": True,
     "messages": [],
 }).encode()
 
-# /api/v2/upload-csv — POST 202 returning a job pointer.
+# /api/v2/upload-csv - POST 202 returning a job pointer.
 V2_UPLOAD_CSV_ACCEPTED_BODY = json.dumps({
     "ok": True,
     "job_id": 42,
     "poll_url": "/api/v2/upload-job/42",
 }).encode()
 
-# /api/v2/upload-job/<id> — GET 200 returning terminal `done` immediately.
+# /api/v2/upload-job/<id> - GET 200 returning terminal `done` immediately.
 # Tests for stalled jobs would need a separate scenario; this is the
 # happy-path body that healthy/partial scenarios serve.
 V2_UPLOAD_JOB_DONE_BODY = json.dumps({
@@ -236,7 +236,7 @@ class MockHandler(http.server.BaseHTTPRequestHandler):
     server_version = "Mock-WDGWars/0.1"
 
     def log_message(self, fmt, *args):
-        pass  # silent — integration tests are noisy enough
+        pass  # silent. Integration tests are noisy enough
 
     def _send(self, status: int, body: bytes,
                 content_type: str = "text/html; charset=utf-8",
@@ -263,7 +263,7 @@ class MockHandler(http.server.BaseHTTPRequestHandler):
 
     def _route(self):
         """Return (status, body, content_type) for the path/method/scenario."""
-        # Strip query string for route matching — the 2026-06-03 map probes
+        # Strip query string for route matching, the 2026-06-03 map probes
         # exercise `/api/member-territories?compact=1`, `?bbox=…`, `?zoom=5`
         # and the dispatch should match the base path, not the qs variants.
         path = self.path.split("?", 1)[0]
@@ -281,7 +281,7 @@ class MockHandler(http.server.BaseHTTPRequestHandler):
 
         # /api/* surface
         if scenario in ("outage", "diverged"):
-            # Whole /api/* unbound — every path returns the styled 404
+            # Whole /api/* unbound. Every path returns the styled 404
             # (or a per-path variant under `diverged`). Except /api/stats
             # which falls through to the LSWS admin layer in `outage`.
             if path == "/api/stats" and method == "GET":
@@ -290,11 +290,11 @@ class MockHandler(http.server.BaseHTTPRequestHandler):
                 return 404, _div_body(path), "text/html; charset=utf-8"
             return 404, STYLED_404_BODY, "text/html; charset=utf-8"
 
-        # `partial` — API is up but /api/stats is still leaking
+        # `partial`. API is up but /api/stats is still leaking
         if scenario == "partial" and path == "/api/stats" and method == "GET":
             return 200, STATS_LEAK_BODY, "application/json"
 
-        # `healthy` and `partial` — real /api/* handlers
+        # `healthy` and `partial`, real /api/* handlers
         if path.rstrip("/") == "/api":
             return 200, b"<html>api root</html>", "text/html; charset=utf-8"
         if path.startswith("/api/me"):
@@ -377,7 +377,7 @@ class MockHandler(http.server.BaseHTTPRequestHandler):
                 return 401, b'{"error":"auth required"}', "application/json"
             return 200, b'{"ok":true}', "application/json"
         if path.startswith("/api/team/"):
-            # /api/team/{id} — must come AFTER /api/team/me and the
+            # /api/team/{id}. Must come AFTER /api/team/me and the
             # /api/team/messages routes so they don't fall through here.
             if not api_key or api_key == "g" * 64:
                 return 401, b'{"error":"auth required"}', "application/json"
@@ -402,7 +402,7 @@ class MockHandler(http.server.BaseHTTPRequestHandler):
             return 404, b"Not Found", "text/plain"
         if path.startswith("/api/health"):
             return 404, b"Not Found", "text/plain"
-        # Anything else under /api/ — bound but unknown route returns 404
+        # Anything else under /api/. Bound but unknown route returns 404
         # with a distinct body (not the styled-404 fallback).
         return 404, b"Route not registered", "text/plain"
 

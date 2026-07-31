@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Double-click (or run) this file to refresh wdgwars_api_tester.py from main.
-# Stdlib only — no deps to refresh, just the single .py file.
+# Stdlib only - no deps to refresh, just the single .py file.
 
 set -e
 cd "$(dirname "$0")"

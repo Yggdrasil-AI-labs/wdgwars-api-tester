@@ -13,7 +13,7 @@ paths but not _write_heartbeat's OSError branch; test_outage_backoff.py
 covers _seconds_to_next_midnight_utc but always passes an explicit `now`,
 never exercising the `now is None -> time.time()` branch; and nothing calls
 _post_webhook, diff_against_baseline, or load_key directly. Kept pure/
-offline — urllib.request.urlopen and subprocess.run are mocked, never called
+offline. Urllib.request.urlopen and subprocess.run are mocked, never called
 for real.
 
 Run with: python -m unittest test_webhook_and_hooks

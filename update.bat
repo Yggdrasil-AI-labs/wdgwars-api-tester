@@ -1,6 +1,6 @@
 @echo off
 REM Double-click to refresh wdgwars_api_tester.py from main.
-REM Stdlib only — no deps to refresh.
+REM Stdlib only, no deps to refresh.
 
 python -c "import sys; sys.exit(0 if sys.version_info >= (3,8) else 1)" 2>nul
 if errorlevel 1 (

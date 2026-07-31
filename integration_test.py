@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Integration test harness for wdgwars-api-tester.
 
-Offline by default — spawns mock_wdgwars HTTP servers on local ports and
+Offline by default, spawns mock_wdgwars HTTP servers on local ports and
 runs the tool against them. Does NOT hit the real wdgwars.pl in default
 mode (we just reported a hosting-telemetry bug to them and shouldn't be
 adding tenant traffic).
@@ -111,7 +111,7 @@ class IntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmpdir = tempfile.mkdtemp(prefix="wdgwars-integ-")
-        # Spin up one mock server per scenario. Cheap — pure stdlib.
+        # Spin up one mock server per scenario. Cheap, pure stdlib.
         cls.mocks = {}
         for scenario in ("outage", "healthy", "partial", "diverged"):
             srv, port = serve_in_thread(scenario)
@@ -129,7 +129,7 @@ class IntegrationTests(unittest.TestCase):
     def mock_url(self, scenario: str) -> str:
         return self.mocks[scenario][2]
 
-    # ──────────── Basic invocation (mock URL — fast, safe) ───────────────
+    # ──────────── Basic invocation (mock URL, fast, safe) ───────────────
 
     def test_01_version_flag(self):
         rc, out, err = run_tool("--version")
@@ -209,7 +209,7 @@ class IntegrationTests(unittest.TestCase):
         rc, out, err = run_tool("--quiet",
                                 "--hosts", self.mock_url("partial"),
                                 "--variants", "none,garbage")
-        # HEALTHY+LEAK — API up but stats still leaking. Non-zero exit
+        # HEALTHY+LEAK. API up but stats still leaking. Non-zero exit
         # because LEAK is in the suffix.
         self.assertEqual(rc, 1)
         self.assertEqual(out.strip(), "HEALTHY+LEAK",
@@ -308,7 +308,7 @@ class IntegrationTests(unittest.TestCase):
     # ──────────── Cross-scenario verdict transition (recovery) ──────────
 
     def test_18_baseline_stable_against_same_scenario(self):
-        """Run twice against the same mock — second run should report no
+        """Run twice against the same mock. Second run should report no
         diff. This proves the verdict pipeline is deterministic across
         successive runs given identical API behavior."""
         baseline = Path(self.tmpdir) / "test18-baseline.json"
@@ -396,7 +396,7 @@ class IntegrationTests(unittest.TestCase):
             "sys.path.insert(0, sys.argv[1])\n"
             "from wdgwars_api_tester import _exec_on_change\n"
             "py, cap, sink = sys.argv[2], sys.argv[3], sys.argv[4]\n"
-            # Quote each path defensively — works on both Win cmd.exe and POSIX sh.
+            # Quote each path defensively, works on both Win cmd.exe and POSIX sh.
             "cmd = f'\"{py}\" \"{cap}\" \"{sink}\"'\n"
             "deltas = ['foo OK/200 -> DEAD/404']\n"
             "verdicts = {'DEAD': 1}\n"
@@ -448,12 +448,12 @@ class IntegrationTests(unittest.TestCase):
         """Outage mock: POST hits the styled-404 fallthrough; custom_runner
         short-circuits without polling because status != 2xx. The shared
         body_md5 lines up with the sentinel fingerprint so DEAD verdict
-        fires — same blast radius as a v1 endpoint going dark.
+        fires, same blast radius as a v1 endpoint going dark.
 
         `none` is included in variants so the sentinel probes (which are
         needs_auth=False) actually run and establish the canonical /api/
         404 fingerprint. Without that, DEAD detection is disabled and the
-        v2 result falls through to a plain 404 verdict — see test_10.
+        v2 result falls through to a plain 404 verdict, see test_10.
         """
         rc, out, err = run_tool("--json", "--no-table",
                                 "--key", "x" * 64,
@@ -476,7 +476,7 @@ class IntegrationTests(unittest.TestCase):
 @unittest.skipUnless(LIVE,
     "Live tests skipped. Pass --live or INTEGRATION_LIVE=1 to enable.")
 class LiveTests(unittest.TestCase):
-    """Schema-validation against the real wdgwars.pl. Opt-in — these hit
+    """Schema-validation against the real wdgwars.pl. Opt-in, these hit
     the actual API and shouldn't run on every developer push."""
 
     def test_live_probe_schema(self):

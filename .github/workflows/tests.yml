@@ -28,7 +28,7 @@ jobs:
           python -c "import wdgwars_api_tester; print('import OK')"
 
       - name: Unit tests
-        # Stdlib-only — no `pip install` needed. Mock server is in
+        # Stdlib-only, no `pip install` needed. Mock server is in
         # mock_wdgwars.py, no live network or real key required.
         run: python -m unittest discover -s . -p "test_*.py" -v
 

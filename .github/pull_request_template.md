@@ -23,7 +23,7 @@ at merge time prevents the next round.
 - [ ] `__version__` is bumped if probe behavior changed.
 - [ ] No `Co-Authored-By: Claude` trailer in any commit.
 - [ ] No `zhn*` hostnames, real names, or lab-internal references in code/commits.
-- [ ] No probe added that is state-mutating (auth/login, bounty accept, etc.) — read-only probes only.
+- [ ] No probe added that is state-mutating (auth/login, bounty accept, etc.), read-only probes only.
 
 ## Live-probe verdict (if applicable)
 

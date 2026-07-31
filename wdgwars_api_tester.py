@@ -57,7 +57,7 @@ AUTH_VARIANTS = ("none", "garbage", "valid")
 
 # Fingerprint for the LiteSpeed admin-telemetry leak that 2026-05-29's bug
 # report flagged on /api/stats. The leak's distinctive content always
-# carries at least one of these substrings — both are LSWS field names that
+# carries at least one of these substrings - both are LSWS field names that
 # would never appear in a normal API response or auth-redirect login page.
 # This list is the LEAK verdict's gate; bare HTTP 200 on stats-leak-check
 # is no longer enough (locosp's fix landed and the endpoint now 302s to
@@ -67,7 +67,7 @@ LSWS_LEAK_FINGERPRINTS = ("lsphp_processes", "top_domains", "lsphp")
 
 class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     """urllib's default behavior is to silently follow 3xx responses, which
-    would mask the route's actual shape — a /api/<endpoint> path that 302s
+    would mask the route's actual shape, a /api/<endpoint> path that 302s
     to /login is meaningfully different from one that 200s directly. We
     want the 3xx to surface so verdict logic can label it AUTH-REDIRECT.
 
@@ -102,7 +102,7 @@ class Probe:
     # done). When set, `_request()` delegates to this callable instead of
     # doing its normal single-shot flow. The callable receives the same
     # arguments as `_request` and must return a fully-populated Result.
-    # Keep this rare — most probes should fit the single-shot model.
+    # Keep this rare. Most probes should fit the single-shot model.
     custom_runner: Optional[Callable] = None
 
 
@@ -135,20 +135,20 @@ def _csv_probe_body() -> tuple[bytes, str]:
 
 def build_probes(team_id: int = 1) -> list[Probe]:
     """Build the probe list. ``team_id`` selects which numeric gang id to
-    probe on ``/api/team/{id}`` — defaults to 1 (typically the founder gang
+    probe on ``/api/team/{id}``, defaults to 1 (typically the founder gang
     on any healthy instance). Override via ``--team-id`` for forks/staging.
 
     State-mutating endpoints intentionally NOT probed (would change real
     game/account state on hits to production wdgwars.pl):
 
-    * ``POST /api/auth/login`` — issues a fresh device-bound API key row.
-    * ``POST /api/bounties/{id}/accept`` — claims a bounty.
-    * ``POST /api/shop/buy`` — purchases an item.
-    * ``POST /api/shop/activate/{id}`` — activates a purchased item.
+    * ``POST /api/auth/login``, issues a fresh device-bound API key row.
+    * ``POST /api/bounties/{id}/accept``, claims a bounty.
+    * ``POST /api/shop/buy``, purchases an item.
+    * ``POST /api/shop/activate/{id}``, activates a purchased item.
       Same CF-Transform/REQUEST_URI regex bug as the original five handlers
       and bounties.php; fixed 2026-06-04 in the same pass. Confirmed as a
       bound route by LOCOSP; no probe because POSTing would side-effect.
-    * ``DELETE /api/team/messages/{id}`` — deletes a gang message.
+    * ``DELETE /api/team/messages/{id}``, deletes a gang message.
 
     Catalog/list reads under the same prefixes are fine to probe (see
     ``team-messages`` and ``team-messages-id`` below for the read shape).
@@ -162,7 +162,7 @@ def build_probes(team_id: int = 1) -> list[Probe]:
                     "Since 2026-06-03 the response also carries `your_rank` "
                     "(top_n=100, nulls for >N) and `recent_captures` (≤20 "
                     "attacker-side). Body shape isn't asserted by the tester "
-                    "— OK status is the contract — but a regression that "
+                    ". OK status is the contract, but a regression that "
                     "drops them would still surface via downstream consumers."),
         Probe("badge-catalog", "GET", "/api/badge-catalog", True, (200,),
               notes="Curated public badge dictionary (~51 entries). Shipped "
@@ -172,12 +172,12 @@ def build_probes(team_id: int = 1) -> list[Probe]:
               notes=f"Public team dossier for gang id {team_id}. Top-level "
                     "{id, name, color, rank, created_at, members[]}. The /me "
                     "variant currently 524s (origin timeout) post-CF-Transform "
-                    "fix — see team-me probe."),
+                    "fix, see team-me probe."),
         Probe("team-me", "GET", "/api/team/me", True, (200,),
               notes="Caller's-own team dossier. Was 400 'usage' pre-2026-06-03, "
                     "fix accepted both /api/ and /endpoint/ prefixes but "
                     "/me variant now returns CF 524 (origin timeout). "
-                    "Probe accepts 200 — a 524 surfaces as the verdict so "
+                    "Probe accepts 200, a 524 surfaces as the verdict so "
                     "the upstream bug stays visible until LOCOSP ships the "
                     "/me-side fix."),
         Probe("upload-history", "GET", "/api/upload-history?limit=5", True, (200,),
@@ -295,9 +295,9 @@ class Result:
     # New in v0.6.1. `location` is the raw Location header on 3xx responses
     # (empty on 2xx/4xx/5xx). `body_excerpt` is the first 200 chars of the
     # response body, decoded with errors="replace", for human debugging
-    # from the JSON snapshot (excerpt-only — do NOT treat as the full
+    # from the JSON snapshot (excerpt-only. Do NOT treat as the full
     # body). `leak_marker` is empty unless the LSWS admin-telemetry
-    # fingerprint was found anywhere in the full body — set to the first
+    # fingerprint was found anywhere in the full body. Set to the first
     # matched substring; verdict logic uses it directly to fire LEAK.
     # Decoupled from body_excerpt because the leak fingerprint may sit
     # past the first 200 chars (e.g. inside a pretty-printed JSON dict).
@@ -379,7 +379,7 @@ def _v2_upload_csv_round_trip(probe: Probe, host: str, auth: str,
             resp_headers = {}
     except urllib.error.URLError as e:
         err = f"URLError: {e.reason}"
-    except Exception as e:  # noqa: BLE001 — diagnostic tool, log anything
+    except Exception as e:  # noqa: BLE001, diagnostic tool, log anything
         err = f"{type(e).__name__}: {e}"
 
     # Non-2xx or no body: short-circuit, no poll. DEAD detection still
@@ -527,7 +527,7 @@ def _request(probe: Probe, host: str, auth: str, valid_key: Optional[str],
             resp_headers = {}
     except urllib.error.URLError as e:
         err = f"URLError: {e.reason}"
-    except Exception as e:  # noqa: BLE001 — diagnostic tool, log anything
+    except Exception as e:  # noqa: BLE001, diagnostic tool, log anything
         err = f"{type(e).__name__}: {e}"
     elapsed_ms = int((time.monotonic() - t0) * 1000)
 
@@ -577,10 +577,10 @@ def _canonical_sentinel(results: list[Result], host: str) -> tuple[str, str]:
     """Quorum-pick the canonical /api/ 404 fingerprint for one host.
 
     Returns (canonical_md5, status) where status is one of:
-        "unanimous"   — all 3 sentinels agreed
-        "majority"    — 2 of 3 agreed (one diverged, e.g. CDN cache slip)
-        "diverged"    — all 3 distinct, no canonical fingerprint
-        "no-data"     — fewer than 2 sentinels returned a body
+        "unanimous", all 3 sentinels agreed
+        "majority", 2 of 3 agreed (one diverged, e.g. CDN cache slip)
+        "diverged", all 3 distinct, no canonical fingerprint
+        "no-data", fewer than 2 sentinels returned a body
 
     DEAD detection only fires when status is unanimous or majority. Diverged
     sentinels disable DEAD detection for that host and emit a warning.
@@ -656,7 +656,7 @@ def annotate_verdicts(results: list[Result]) -> None:
             # Distinct from AUTH-REQUIRED (which is the spec-correct 401
             # JSON shape). Routing inconsistency in WDGWars: some /api/*
             # paths return 401 JSON, others 302→login HTML. We surface it
-            # without escalating to DEGRADED — the auth gate is working,
+            # without escalating to DEGRADED. The auth gate is working,
             # the response shape just isn't API-clean.
             r.verdict = "AUTH-REDIRECT"
         elif r.status in (301, 302, 303, 307, 308):
@@ -746,7 +746,7 @@ def summary(results: list[Result]) -> dict:
 #
 # Optional, stdlib-only Telegram notifier. Posts to the Bot API on state
 # change in --watch mode. No dependency on any bridge, broker, or webhook
-# service — drop a bot token + chat id into the env and the tool pages itself.
+# service - drop a bot token + chat id into the env and the tool pages itself.
 #
 # Create a bot via @BotFather to get a token. For chat_id: send a message
 # to the bot, then GET https://api.telegram.org/bot<TOKEN>/getUpdates and
@@ -856,7 +856,7 @@ def _classify_delta(prev_verdict: str, prev_status: int,
     """Returns {direction: improved|regressed|sideways, upstream_flap: bool}.
 
     Direction is by verdict-rank: improved if curr is better-ranked than prev.
-    upstream_flap is True if EITHER side is a 5xx — flagging the transition as
+    upstream_flap is True if EITHER side is a 5xx, flagging the transition as
     LOCOSP-origin/CDN flap rather than something the probe itself controls."""
     pr = _verdict_rank(prev_verdict, prev_status)
     cr = _verdict_rank(curr_verdict, curr_status)
@@ -877,7 +877,7 @@ def _parse_delta_line(line: str) -> dict | None:
     """Parse a line from _probe_deltas back into structured fields.
 
     Format: '<host> <probe>/<auth>          <PV>/<PS> -> <CV>/<CS>'
-    Returns None for NEW / GONE lines (we don't classify those — they're
+    Returns None for NEW / GONE lines (we don't classify those, they're
     always real signal, not noise)."""
     if " NEW -> " in line or " GONE " in line:
         return None
@@ -936,7 +936,7 @@ def _should_suppress_alert(prev_overall: str, curr_overall: str,
       - net direction isn't getting worse (regressed <= improved)
     Never suppress when this sweep's outage_share (fraction of 429/transport-
     error verdicts, the same signal --watch uses for outage-aware backoff)
-    meets outage_threshold — a real outage must never be classified away as
+    meets outage_threshold. A real outage must never be classified away as
     upstream flap just because `overall` hadn't moved yet.
     Returns (suppress: bool, reason: str).
     """
@@ -1426,7 +1426,7 @@ def _format_wedge_payload(path: Optional[Path], age: Optional[int],
                   f"last status={hb.get('status', '?')}, "
                   f"overall={hb.get('overall', '?')}")
     msg = (f"⚠️ [CRITICAL] wdgwars-api-tester: WATCH LOOP STALLED\n"
-           f"The continuous probe has stopped sweeping — {detail}.\n"
+           f"The continuous probe has stopped sweeping, {detail}.\n"
            f"→ API health monitoring is not updating. Restart the watch service.")
     return {"content": msg, "text": msg}
 
@@ -1448,9 +1448,9 @@ def _check_stale(path: Optional[Path], max_age: float,
         reason = (f"last heartbeat {age}s ago ({rel} {max_age:.0f}s threshold), "
                   f"status={hb.get('status', '?')}")
     if not stale:
-        log.info("watchdog: OK — %s", reason)
+        log.info("watchdog: OK, %s", reason)
         return 0
-    log.error("watchdog: STALE — watch loop wedged or down. %s", reason)
+    log.error("watchdog: STALE, watch loop wedged or down. %s", reason)
     for url in (webhook_urls or []):
         ok = _post_webhook(url, _format_wedge_payload(path, age, max_age, hb))
         log.info("  wedge-alert webhook: %s (%s)",
@@ -1469,7 +1469,7 @@ def _check_stale(path: Optional[Path], max_age: float,
 def _append_state_log(path: Path, prev_overall: str, curr_overall: str,
                        deltas: list[str], by_verdict: dict,
                        suppressed: bool, suppress_reason: str) -> None:
-    """Append one state-change record to a JSONL log. Best-effort — failure
+    """Append one state-change record to a JSONL log. Best-effort, failure
     to write logs a warning but does not interrupt the watch loop."""
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1663,7 +1663,7 @@ def _format_digest_payload(results: list[Result], s: dict,
 # ───────────────────────────── Exec-on-change hook ───────────────────────────
 #
 # Runs an arbitrary shell command on state change, with env vars set so the
-# operator's script has everything it needs. Use this when no webhook fits —
+# operator's script has everything it needs. Use this when no webhook fits - 
 # send email via mail(1), trigger a Lambda via aws CLI, write to a database,
 # pipe to logger, whatever. Trust model: the operator authored the command.
 
@@ -2090,7 +2090,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         sweep_pool = (concurrent.futures.ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="sweep") if deadline else None)
         # Write a heartbeat before the first sweep so a fresh start (or a
-        # restart) is never briefly indistinguishable from a wedge — otherwise
+        # restart) is never briefly indistinguishable from a wedge, otherwise
         # a watchdog firing in the ~one-sweep startup window false-alarms.
         if args.heartbeat_file:
             _write_heartbeat(args.heartbeat_file, "STARTING", 0, "starting")
@@ -2197,7 +2197,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 # Outage-aware backoff: if a meaningful share of this sweep
                 # came back 429 or transport-error, the LOCOSP daily quota
                 # (or a per-IP CF limit) is likely tripped. Don't keep
-                # hammering — extend sleep up to the next-midnight-UTC reset
+                # hammering, extend sleep up to the next-midnight-UTC reset
                 # point. Resets the streak on the first clean sweep.
                 share = _outage_share(results)
                 if share >= args.outage_backoff_threshold:

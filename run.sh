@@ -8,7 +8,7 @@
 #   ./run.sh --json > snapshot.json            # machine-readable
 #   ./run.sh --watch 60 --alert-webhook URL    # poll + notify
 #
-# Stdlib only — no venv needed. Picks python3 from PATH.
+# Stdlib only - no venv needed. Picks python3 from PATH.
 
 cd "$(dirname "$0")"
 python3 wdgwars_api_tester.py "$@"

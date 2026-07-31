@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Unit tests for wdgwars_api_tester.
 
-Pure-logic coverage only — no network, no fixtures. Run:
+Pure-logic coverage only. No network, no fixtures. Run:
 
     python3 -m unittest test_wdgwars_api_tester
 """
@@ -54,7 +54,7 @@ def _outage_fixture(host="https://wdgwars.pl") -> list[Result]:
     """A realistic outage snapshot: 3 unanimous sentinels, all probes DEAD.
 
     `stats-leak-check` carries a `leak_marker` reflecting the LSWS admin
-    telemetry fingerprint that the v0.5.x outage exposed — the v0.6.1
+    telemetry fingerprint that the v0.5.x outage exposed, the v0.6.1
     LEAK rule reads this field, not just status, so fixtures need to
     set it explicitly to reproduce the original "DEGRADED+LEAK" state.
     """
@@ -189,7 +189,7 @@ class TestAnnotateVerdicts(unittest.TestCase):
         annotate_verdicts(results)
         self.assertEqual(results[0].verdict, "ERROR")
 
-    # ───────── v0.6.1 — AUTH-REDIRECT / tightened LEAK / redirects ─────────
+    # ───────── v0.6.1. AUTH-REDIRECT / tightened LEAK / redirects ─────────
 
     def test_auth_redirect_when_302_to_login(self):
         results = [
@@ -220,7 +220,7 @@ class TestAnnotateVerdicts(unittest.TestCase):
 
     def test_leak_fires_on_any_probe_with_leak_marker(self):
         # v0.6.1 generalized LEAK away from probe-specific. Any probe
-        # whose body carries the LSWS fingerprint now fires LEAK — that
+        # whose body carries the LSWS fingerprint now fires LEAK, that
         # catches the case where the leak expands to additional /api/*
         # paths in the future.
         results = [
@@ -234,7 +234,7 @@ class TestAnnotateVerdicts(unittest.TestCase):
         ac = next(r for r in results if r.probe == "aircraft")
         self.assertEqual(ac.verdict, "LEAK")
 
-    # ───────── 2026-06-05 — PAYLOAD-TOO-LARGE verdict ─────────
+    # ───────── 2026-06-05. PAYLOAD-TOO-LARGE verdict ─────────
 
     def _result_with_excerpt(self, probe, status, body_excerpt):
         """413 verdict logic reads body_excerpt, which _r does not surface.
@@ -315,7 +315,7 @@ class TestSummary(unittest.TestCase):
         # post-2026-05-30 the endpoint 302s to /login (or returns a non-
         # leak body), neither of which matches the /api/ 404 fingerprint.
         # The pre-v0.6.1 fixture had this probe's body matching the
-        # sentinel — that's actually DEAD, not BLOCKED, and v0.6.1 now
+        # sentinel, that's actually DEAD, not BLOCKED, and v0.6.1 now
         # surfaces it correctly. Healthy fixtures must reflect a real
         # post-fix shape.
         results = [
@@ -360,7 +360,7 @@ class TestStateSignature(unittest.TestCase):
             if r.probe == "stats-leak-check":
                 r.body_md5 = "completely-different-counter-snapshot"
         self.assertEqual(state_signature(r1), state_signature(r2),
-                         "state_signature must ignore body_md5 — "
+                         "state_signature must ignore body_md5, "
                          "dynamic bodies like /api/stats would otherwise "
                          "fire spurious state-change alerts in --watch")
 
@@ -471,18 +471,18 @@ class TestWebhookFormatter(unittest.TestCase):
             ["wdgwars.pl me/valid    OK/200 -> DEAD/404"],
             {"DEAD": 10, "LEAK": 1},
         )
-        # Discord webhooks read `content` — v0.10.0 carries human-readable
+        # Discord webhooks read `content`, v0.10.0 carries human-readable
         # prose here instead of the raw jargon string.
         self.assertIn("content", p)
         self.assertIn("main API endpoint down", p["content"])
         self.assertIn("leaking", p["content"])
-        # Slack incoming webhooks read `text` — same human-readable string.
+        # Slack incoming webhooks read `text`, same human-readable string.
         self.assertIn("text", p)
         self.assertIn("main API endpoint down", p["text"])
         # The old jargon string is preserved as `text_machine` for any
         # tooling that depended on it.
         self.assertIn("OUTAGE+LEAK", p["text_machine"])
-        # Generic / structured consumers — unchanged from v0.9.0.
+        # Generic / structured consumers, unchanged from v0.9.0.
         self.assertEqual(p["overall"], "OUTAGE+LEAK")
         self.assertEqual(p["prev_overall"], "HEALTHY")
         self.assertEqual(p["kind"], "regression")
@@ -509,7 +509,7 @@ class TestWebhookFormatter(unittest.TestCase):
             ["a/b/c  OK/200 -> DEAD/404"],
             {"DEAD": 1, "LEAK": 1},
         )
-        # Must round-trip cleanly — no datetime, no bytes, no custom types.
+        # Must round-trip cleanly, no datetime, no bytes, no custom types.
         encoded = _json.dumps(p)
         decoded = _json.loads(encoded)
         self.assertEqual(decoded["overall"], "DEGRADED+LEAK")
@@ -726,7 +726,7 @@ class TestRedactWebhookUrl(unittest.TestCase):
 class TestBuildProbes2026_06_03Surface(unittest.TestCase):
     """Coverage for the 2026-06-03 LOCOSP-shipped probes (v0.8.0).
 
-    These tests are pure-logic — they assert the probe list shape and the
+    These tests are pure-logic, they assert the probe list shape and the
     ``team_id`` parameterization without touching the network.
     """
 

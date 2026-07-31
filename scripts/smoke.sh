@@ -8,7 +8,7 @@
 #   3. Offline unit tests pass.
 #   4. mock_wdgwars.py launches and serves a known scenario (sanity-check
 #      the integration harness's prerequisite without running the full
-#      offline integration suite — that's the CI workflow's job).
+#      offline integration suite - that's the CI workflow's job).
 #
 # Run from the repo root:   bash scripts/smoke.sh
 # Exit: 0 all pass, 1 any failure (fail-fast).
@@ -60,7 +60,7 @@ python3 mock_wdgwars.py --scenario healthy --port "$MOCK_PORT" \
     > "$TMP_DIR/mock.log" 2>&1 &
 MOCK_PID=$!
 trap 'kill $MOCK_PID 2>/dev/null; rm -rf "$TMP_DIR"' EXIT INT TERM
-# Poll for ready — TCP connect, not HTTP. The mock's endpoints return
+# Poll for ready - TCP connect, not HTTP. The mock's endpoints return
 # 401/404 by design (that's what the tester probes for); HTTP-level
 # checks would mis-read those as "not ready" even though the server is.
 READY=0

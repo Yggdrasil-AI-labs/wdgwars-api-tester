@@ -44,7 +44,7 @@ Raise the floor as tests are added; it is a ratchet, not a target.
 The SonarCloud gate is the forward-looking quality enforcement, judging new
 code on each branch or pull request: new-code coverage, no new bugs,
 vulnerabilities, or code smells, and security hotspots reviewed. The one
-expected hotspot — the `shell=True` exec-on-change hook — is documented and
+expected hotspot. The `shell=True` exec-on-change hook. Is documented and
 dispositioned in `SECURITY-FINDINGS.md`.
 
 ## One-time setup (free tiers)
@@ -60,7 +60,7 @@ passes on its own).
    `sonar-project.properties`.
 2. In the project settings, turn off Automatic Analysis so the CI scanner is
    the source of truth. (If Automatic Analysis is left on, the CI-based scan
-   refuses to run — the two cannot both analyse the project.)
+   refuses to run. The two cannot both analyse the project.)
 3. Create a token under My Account, Security, and add it to this repo as the
    `SONAR_TOKEN` Actions secret (Settings, Secrets and variables, Actions).
 

@@ -27,7 +27,7 @@ That's the entire outbound footprint.
   WDGWars feeder family.
 - No `eval`, no `exec`. The single `shell=True` subprocess call is
   `--exec-on-change`, and it runs ONLY the command the operator passed
-  on the CLI — network-derived state reaches it via `WDGWARS_*` env
+  on the CLI, network-derived state reaches it via `WDGWARS_*` env
   vars, never interpolated into the command string. See
   "Exec-on-change" below for the threat model.
 - No remote code execution at runtime. The probe is single-file
@@ -44,12 +44,12 @@ That's the entire outbound footprint.
   path; api-tester does not save its own).
 - The key is sent over HTTPS only, in the `X-API-Key` request header
   on `--variants valid` probes. TLS context is Python's
-  `ssl.create_default_context()` default — system trust store,
+  `ssl.create_default_context()` default, system trust store,
   hostname verification on, TLS 1.2+.
 - The key is never logged. Verdict output includes only HTTP status,
   Content-Type, and a body excerpt; since v0.13.3 the excerpt is
   scrubbed of the real key (replaced with `[REDACTED-KEY]`) before
-  truncation, in case a server error ever echoes it back — excerpts
+  truncation, in case a server error ever echoes it back, excerpts
   travel into webhook/Telegram alert payloads.
 - The `--variants none,garbage,valid` flag controls which auth
   variants get exercised. `garbage` sends an obvious sentinel string,
@@ -114,8 +114,8 @@ fire while the probe is running.
 
 A review of this tool against the SonarCloud SAST finding classes (path
 traversal, command/argument injection, insecure temp use, unsafe DB opens)
-found nothing to remediate. The one security-sensitive construct — the
-`shell=True` exec-on-change hook — is acceptable by design (operator-authored
+found nothing to remediate. The one security-sensitive construct, the
+`shell=True` exec-on-change hook. Is acceptable by design (operator-authored
 command; network-influenced state passed via environment variables, never
 interpolated into the command string), and that behavior is now pinned by
 `test_security.py`. The full write-up is in

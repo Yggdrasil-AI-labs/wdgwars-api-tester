@@ -163,7 +163,7 @@ class TestShouldSuppressAlert(unittest.TestCase):
         self.assertTrue(suppress)
 
     def test_mixed_flap_plus_non_flap_does_not_suppress(self):
-        # 2 of 3 are flap — the third (e.g. probe DEAD->OK) is real signal.
+        # 2 of 3 are flap, the third (e.g. probe DEAD->OK) is real signal.
         s = self._summary(upstream_flap_count=2, total_classified=3,
                           improved=2, regressed=1)
         suppress, reason = _should_suppress_alert("DEGRADED", "DEGRADED", s)
@@ -171,7 +171,7 @@ class TestShouldSuppressAlert(unittest.TestCase):
         self.assertIn("non-upstream-flap", reason)
 
     def test_net_regression_with_flap_does_not_suppress(self):
-        # All 4 are flap, but 3 regressed vs 1 improved — net getting worse.
+        # All 4 are flap, but 3 regressed vs 1 improved, net getting worse.
         s = self._summary(upstream_flap_count=4, total_classified=4,
                           improved=1, regressed=3)
         suppress, reason = _should_suppress_alert("DEGRADED", "DEGRADED", s)
@@ -179,7 +179,7 @@ class TestShouldSuppressAlert(unittest.TestCase):
         self.assertIn("net regression", reason)
 
     def test_zero_classifiable_deltas_does_not_suppress(self):
-        # Nothing to classify — fall through to "real signal" (caller decides
+        # Nothing to classify, fall through to "real signal" (caller decides
         # what to do with no deltas + no state change).
         s = self._summary()
         suppress, reason = _should_suppress_alert("DEGRADED", "DEGRADED", s)

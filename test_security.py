@@ -4,8 +4,8 @@ wdgwars-api-tester had no SonarCloud SAST findings to remediate when its CI
 quality gate was added (see SECURITY-FINDINGS.md). Its one security-sensitive
 construct is `_exec_on_change`, which runs an operator-authored shell command
 on state change via `subprocess.run(..., shell=True)`. That is acceptable by
-design — the command is authored by the operator (like a cron command or git
-hook) — *and* it is only safe because the dynamic, potentially attacker-
+design. The command is authored by the operator (like a cron command or git
+hook). *and* it is only safe because the dynamic, potentially attacker-
 influenced state data (deltas, verdicts, overall status) is passed to that
 command through **environment variables**, never interpolated into the command
 string.
@@ -68,7 +68,7 @@ class ExecOnChangeEnvTransportTests(unittest.TestCase):
         env = self._run_hook([payload, "host b: UP -> DOWN"], {"DOWN": 1})
         self.assertEqual(env["WDGWARS_DELTAS"], payload + "\nhost b: UP -> DOWN")
         # The payload's side effect (a PWNED file) must not exist anywhere we
-        # ran — it was data, never code.
+        # ran. It was data, never code.
         self.assertFalse(Path("PWNED").exists())
         self.assertFalse((Path.cwd() / "PWNED").exists())
 

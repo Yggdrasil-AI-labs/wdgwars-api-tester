@@ -31,7 +31,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.13.2] - Watchdog log wording
 
 `--check-stale`'s healthy log line reused the staleness phrasing, reading e.g.
-`last heartbeat 3s ago (>16200s)` on success — confusing. It now reads `(within
+`last heartbeat 3s ago (>16200s)` on success. Confusing. It now reads `(within
 16200s threshold)` when fresh and `(over … threshold)` when stale. Log text
 only; no behavior change.
 
@@ -49,7 +49,7 @@ The `--watch` loop could freeze indefinitely without dying. `--timeout` is a
 per-socket-read timeout, not a total deadline, so a response that trickles
 bytes (or a half-open connection a CDN keeps warm) blocks `resp.read()`
 forever. The single-threaded loop then stops sweeping while the process stays
-`active (running)` — alerting silently dies but `systemctl is-active` looks
+`active (running)`, alerting silently dies but `systemctl is-active` looks
 healthy. Observed in the field: a watch instance went silent for 8 days after
 wedging mid-sweep, with `is-active` reporting `active` the whole time.
 
@@ -57,29 +57,29 @@ Two defenses, plus an external watchdog hook:
 
 ### Added
 
-- `--sweep-deadline SECONDS` (default 180, 0 disables) — hard wall-clock ceiling
+- `--sweep-deadline SECONDS` (default 180, 0 disables), hard wall-clock ceiling
   on a single sweep in `--watch` mode. A sweep that exceeds it is abandoned and
   the loop continues; the stuck worker is left to drain and the internal
   one-slot executor is recreated so the next sweep is never queued behind it.
-- `--heartbeat-file PATH` — in `--watch` mode, atomically writes a JSON
+- `--heartbeat-file PATH`: in `--watch` mode, atomically writes a JSON
   heartbeat (`ts`, `overall`, `sweep_ms`, `status`, `pid`) after every sweep,
   including abandoned ones (`status=stalled`). Lets an external watchdog tell a
-  healthy-but-quiet loop from a wedged one — state-log freshness can't, since it
+  healthy-but-quiet loop from a wedged one, state-log freshness can't, since it
   only grows on transitions.
-- `--check-stale SECONDS` — one-shot watchdog mode. Reads `--heartbeat-file` and
+- `--check-stale SECONDS`: one-shot watchdog mode. Reads `--heartbeat-file` and
   exits 1 if the newest heartbeat is older than `SECONDS` (or missing), else 0.
   With `--alert-webhook`, also POSTs a wedge alert. Mutually exclusive with
   `--watch`/`--digest`; intended for a short systemd timer guarding the loop.
 
 ### Tests
 
-- `test_watchdog.py` — heartbeat round-trip, staleness thresholds, missing-file
+- `test_watchdog.py`: heartbeat round-trip, staleness thresholds, missing-file
   handling, wedge-payload shape (asserts no host identifiers leak), and the
   `--check-stale` exit-code contract via `main()`.
 
 ## CI quality gates + security review (tooling-only, landed unversioned mid-0.13.x)
 
-Tooling and CI only — no change to `wdgwars_api_tester.py` behavior, so no
+Tooling and CI only, no change to `wdgwars_api_tester.py` behavior, so no
 version bump. (Header renamed from "[Unreleased]" in v0.13.3: the work has
 long been on `main` and the mid-file position kept confusing changelog reads.)
 
@@ -89,25 +89,25 @@ SonarCloud quality gate → Snyk dependency scan → gated release-artifact buil
 The `sonarcloud` / `snyk` jobs stay red until the repo is imported into
 SonarCloud and the `SONAR_TOKEN` / `SNYK_TOKEN` secrets are added (see CI.md);
 the test + coverage stage is independent and passes on its own. (The tool is
-pure stdlib, so the Snyk stage is effectively a no-op — kept for parity.)
+pure stdlib, so the Snyk stage is effectively a no-op, kept for parity.)
 
 A review against the SonarCloud SAST finding classes found nothing to
-remediate. The one security-sensitive construct — the `shell=True`
-exec-on-change hook — is acceptable by design: the command is operator-authored
+remediate. The one security-sensitive construct, the `shell=True`
+exec-on-change hook. Is acceptable by design: the command is operator-authored
 and the network-influenced state reaches it only via environment variables,
 never interpolated into the command string. See SECURITY-FINDINGS.md.
 
 ### Added
 
-- `.github/workflows/ci-quality-gates.yml` — gated quality + security pipeline.
-- `pyproject.toml` (new — pytest collection scoped to `test_*.py`, plus a
+- `.github/workflows/ci-quality-gates.yml`: gated quality + security pipeline.
+- `pyproject.toml` (new, pytest collection scoped to `test_*.py`, plus a
   coverage config with a 50% regression floor; baseline ~55%),
-  `sonar-project.properties`, `requirements.txt` (placeholder — no runtime
+  `sonar-project.properties`, `requirements.txt` (placeholder, no runtime
   deps), `requirements-dev.txt`, and `CI.md`.
-- `test_security.py` — pins the exec-on-change env-var contract: a
+- `test_security.py`: pins the exec-on-change env-var contract: a
   shell-injection payload in a delta must arrive as environment *data*
   (`WDGWARS_DELTAS`), never as executed command text.
-- `SECURITY-FINDINGS.md` — the security review write-up; pointer added to
+- `SECURITY-FINDINGS.md`: the security review write-up; pointer added to
   `SECURITY.md`.
 
 ## [0.12.2] - 2026-06-05 - Severity tag (low/medium/high) on every post + plural fixes
@@ -122,7 +122,7 @@ jargon. Designed to make the feed *useful knowledge*, not alarming.
   state transition + delta summary to one of low | medium | high:
   - **high** when current overall carries `+LEAK` (security exposure)
     or is `OUTAGE`/`UNREACHABLE`. Steady-state outage stays high every
-    tick — severity follows current state, not delta direction.
+    tick, severity follows current state, not delta direction.
   - **medium** when fresh `DEGRADED` from `HEALTHY`, when sentinel
     quorum just broke (`+SENTINEL-DIVERGED` new this tick), or when
     there's a net regression NOT covered by upstream-flap.
@@ -188,10 +188,10 @@ path that fires today.
 
 - Cap is expected to be removed in roughly two weeks after LOCOSP's
   host migration, at which point the branch goes cold. The verdict
-  itself can stay — it costs nothing and may catch any future
+  itself can stay. It costs nothing and may catch any future
   hosting-tier limit that returns the same envelope shape.
 
-## [0.12.0] — 2026-06-05 — Repeatable --alert-webhook for multi-destination fan-out
+## [0.12.0] - 2026-06-05. Repeatable --alert-webhook for multi-destination fan-out
 
 Single polling instance, multiple Discord/Slack/etc. destinations. Use when
 you want the same rich state-change payload mirrored into a partner's
@@ -230,21 +230,21 @@ midnight-UTC daily cap on `/api/*` traffic).
   Both URLs see the same payload on the same sweep tick; one polling
   process, one state machine.
 
-## [0.11.0] — 2026-06-04 — Team-messages probes + bounties cascade-fix note
+## [0.11.0] - 2026-06-04. Team-messages probes + bounties cascade-fix note
 
 LOCOSP confirmed in #🛡️-mod-reports that the CF-Transform-Rule + REQUEST_URI
 regex cascade was wider than the original five handlers. `bounties.php` and
 `shop_activate.php` had the same miss and were patched in the same pass at
 ~10:00 ET on 2026-06-04. Separately, `GET /api/team/messages/{id}` now
 returns 405 with `Allow: DELETE` instead of silently dropping the id and
-returning the gang messages list — the original spec at the top of
+returning the gang messages list, the original spec at the top of
 `team_messages.php` was always "trailing `/N` is DELETE-only".
 
 ### Added
 
-- `team-messages` probe — `GET /api/team/messages`, expects 200 (caller's
+- `team-messages` probe. `GET /api/team/messages`, expects 200 (caller's
   gang messages list, no id).
-- `team-messages-id` probe — `GET /api/team/messages/1`, expects 405 (the
+- `team-messages-id` probe. `GET /api/team/messages/1`, expects 405 (the
   METHOD verdict labels this as "responding with 405 wrong-verb (endpoint
   healthy)", which is the post-fix healthy state for the DELETE-only
   route).
@@ -256,7 +256,7 @@ returning the gang messages list — the original spec at the top of
 ### Changed
 
 - `bounties` probe note updated to record the 2026-06-04 fix. The
-  2026-05-30 observation `"also returns 404 with valid key — undeployed?"`
+  2026-05-30 observation `"also returns 404 with valid key, undeployed?"`
   was the same regex bug, not an undeployed route. The probe already
   expected 200; the live signal just starts firing OK now.
 - Mock server (`mock_wdgwars.py`) routes `/api/team/messages` (200 list)
@@ -272,7 +272,7 @@ returning the gang messages list — the original spec at the top of
   existing verdict + humanization paths (`OK` for the list, `METHOD` for
   the /N variant) so no downstream consumer touches were needed.
 
-## [0.10.1] — 2026-06-04 — Log-shaped nightly report
+## [0.10.1] - 2026-06-04. Log-shaped nightly report
 
 Reframed the digest from a summary-shaped morning report to a log-shaped
 nightly report. Aimed at a debugging audience (LOCOSP correlating with
@@ -321,7 +321,7 @@ events.
 - Em-dashes scrubbed from all user-visible strings (headlines, delta
   prose, summary bullets) per the lab style rule.
 
-## [0.10.0] — 2026-06-04 — Plain-English webhook output + morning digest
+## [0.10.0] - 2026-06-04. Plain-English webhook output + morning digest
 
 State-change webhook posts now read as plain English instead of jargon, and a
 new oneshot `--digest URL` mode emits a daily summary suitable for a community
@@ -375,12 +375,12 @@ readers (mods, community members, anyone who isn't reading the source).
 - A new timer + service pair `wdgwars-api-tester-digest.{timer,service}` runs
   the digest at 08:00 America/New_York (handles DST automatically).
 
-## [0.9.0] — 2026-06-04 — Restore upstream-flap suppression + `--silent-webhook`
+## [0.9.0] - 2026-06-04. Restore upstream-flap suppression + `--silent-webhook`
 
 The v0.7.0 outage-backoff squash-merge (PR #4, commit 9b32b7f) collapsed a
 parallel local branch that carried six helpers and a CLI flag. Those didn't
 make it into the squash. This release restores them on top of v0.8.0. No
-existing behavior changes — the helpers gate a new code path that only fires
+existing behavior changes, the helpers gate a new code path that only fires
 in `--watch` mode when `--silent-webhook` is set.
 
 ### Added
@@ -389,18 +389,18 @@ in `--watch` mode when `--silent-webhook` is set.
   (LOCOSP upstream flap, no net regression) to this URL instead of dropping
   them. Same payload as `--alert-webhook` with a `[suppressed: <reason>]`
   prefix on `content` + `text` so a channel reader can tell at a glance.
-- `_verdict_rank(verdict, status)` — 5xx ranks below DEAD so we don't
+- `_verdict_rank(verdict, status)`: 5xx ranks below DEAD so we don't
   mis-call an upstream gateway failure as a probe regression.
-- `_is_upstream_5xx(verdict, status)` — single source of truth for
+- `_is_upstream_5xx(verdict, status)`: single source of truth for
   "is this transition a CDN/origin flap rather than a probe-side change."
   Matches explicit CF codes (502/503/504/522/524) and any numeric 5xx.
-- `_classify_delta(...)` — labels each delta `improved` / `regressed` /
+- `_classify_delta(...)`: labels each delta `improved` / `regressed` /
   `sideways` by verdict-rank, tags it `upstream_flap` if either side is 5xx.
-- `_parse_delta_line(line)` — inverse of `_probe_deltas` line format,
+- `_parse_delta_line(line)`: inverse of `_probe_deltas` line format,
   returns None for `NEW` / `GONE` (those are always real signal).
-- `_annotate_deltas(deltas)` — runs the above over a list, returns
+- `_annotate_deltas(deltas)`: runs the above over a list, returns
   (annotated_lines_with_↑↓↔_markers, summary_dict).
-- `_should_suppress_alert(prev_overall, curr_overall, summary)` — the
+- `_should_suppress_alert(prev_overall, curr_overall, summary)`: the
   suppression policy. Suppress only when overall state didn't change AND
   every classified delta is upstream-flap AND `regressed <= improved`.
 
@@ -432,7 +432,7 @@ in `--watch` mode when `--silent-webhook` is set.
   between the v0.7.0 squash-merge and the hotfix that stripped the flag.
   Bug log: `BrainVault/Meta/Bugs/2026-06-04-wdgwars-api-tester-silent-webhook-regression.md`.
 
-## [0.8.0] — 2026-06-03 — Probes for the 2026-06-03 LOCOSP-shipped surface
+## [0.8.0] - 2026-06-03. Probes for the 2026-06-03 LOCOSP-shipped surface
 
 Six new probes covering the API additions LOCOSP shipped on 2026-06-03 in
 response to the bug + perf writeups. The probes give LOCOSP the usage data
@@ -441,24 +441,24 @@ tiles / PMTiles), and pin contract regressions on the new endpoints.
 
 ### Added
 
-- `badge-catalog` probe — `GET /api/badge-catalog`. Curated 51-badge
+- `badge-catalog` probe. `GET /api/badge-catalog`. Curated 51-badge
   dictionary, 24h server cache. Response shape:
   `{ok, count, categories, badges:[{id, label, category, criteria}]}`.
-- `team-id` probe — `GET /api/team/{id}` with `id` configurable via the
+- `team-id` probe. `GET /api/team/{id}` with `id` configurable via the
   new `--team-id` CLI flag (default `1`). Top-level shape:
   `{id, name, color, rank, created_at, members[]}`.
-- `team-me` probe — `GET /api/team/me`. The 400 "usage" error from
+- `team-me` probe. `GET /api/team/me`. The 400 "usage" error from
   2026-06-03 morning was fixed in LOCOSP's CF-Transform-Rule batch, but
   the `/me` variant currently 524s (CF origin timeout). Probe accepts
   200 so the upstream timeout surfaces as a `524` verdict until fully
   shipped.
-- `member-territories-compact` probe — `GET /api/member-territories?compact=1`.
+- `member-territories-compact` probe. `GET /api/member-territories?compact=1`.
   Strips redundant `gang/color/logo` from every row; adds top-level
   `gangs` lookup keyed by `gang_id`. Cuts payload ~20-30%.
-- `member-territories-bbox` probe — `GET /api/member-territories?compact=1&bbox=W,S,E,N&zoom=8`.
+- `member-territories-bbox` probe. `GET /api/member-territories?compact=1&bbox=W,S,E,N&zoom=8`.
   Server-side spatial filter. Accepts Leaflet `bounds.toBBoxString()`
   format. Probe uses a sample bounding window.
-- `member-territories-zoom-skip` probe — `GET /api/member-territories?zoom=5`.
+- `member-territories-zoom-skip` probe. `GET /api/member-territories?zoom=5`.
   At zoom<6 the server returns `gang_hulls` only with
   `zoom_skipped_cells:true` and an empty `cells[]`. Verifies the
   low-zoom render-perf path.
@@ -476,7 +476,7 @@ tiles / PMTiles), and pin contract regressions on the new endpoints.
   surface is fully key-gated); the three map-variant probes target
   `/api/member-territories`.
 
-## [0.7.0] — 2026-06-03 — Outage-aware backoff in `--watch` mode
+## [0.7.0] - 2026-06-03. Outage-aware backoff in `--watch` mode
 
 `--watch` mode now detects LOCOSP-side outage (daily cap, per-IP rate
 limit, or transport-level failure) and progressively extends the
@@ -494,7 +494,7 @@ rendering + biscuit uploads.
   `1.01` to disable the feature entirely.
 - `--outage-backoff-cap-seconds FLOAT` (default `3600.0`): maximum
   sleep when in backoff. Capped further by time-to-next-midnight-UTC,
-  since LOCOSP's daily quota documentedly resets at 00:00 UTC — no
+  since LOCOSP's daily quota documentedly resets at 00:00 UTC, no
   point sleeping past it.
 - Three new public-ish helpers (importable for tests / external use):
   `_outage_share`, `_seconds_to_next_midnight_utc`,
@@ -513,7 +513,7 @@ base, capping at the smaller of `--outage-backoff-cap-seconds` and
 time-to-next-midnight-UTC. The streak resets to 0 on the first clean
 sweep, with a log line announcing recovery. `DEAD`, `AUTH-REQUIRED`,
 `AUTH-REDIRECT`, and other expected non-OK verdicts do NOT count
-toward the outage share — only `429` and `ERROR` (transport-level).
+toward the outage share, only `429` and `ERROR` (transport-level).
 
 ### Why now
 
@@ -524,7 +524,7 @@ it's daily limit again. It'll reset at midnight UTC"). During the
 non-zero traffic to a quota that was already burned and producing only
 all-429 noise. The feature is the structured fix.
 
-## [0.6.3] — 2026-06-03 — Security Notes catch-up
+## [0.6.3] - 2026-06-03. Security Notes catch-up
 
 Pure documentation release. Brings the family's documented security
 posture to api-tester. No code changes.
@@ -543,7 +543,7 @@ posture to api-tester. No code changes.
   three uploaders ship) is N/A for api-tester. The linter exists to
   catch the post-PEP-668 footgun where users follow `python3
   <script>.py` examples and hit `ModuleNotFoundError` because deps
-  live in `.venv/`. api-tester is single-file stdlib-only — no deps,
+  live in `.venv/`. api-tester is single-file stdlib-only, no deps,
   no venv requirement, no footgun. If a runtime dep is ever added,
   port the linter at the same time.
 - `pages.yml` (the GitHub Pages workflow Muninn and Heimdall ship) is
@@ -555,21 +555,21 @@ posture to api-tester. No code changes.
   own. Scheduled monitoring is already covered by `--watch`, which is
   designed for continuous probing rather than daily snapshots.
 
-## [0.6.2] — 2026-06-03
+## [0.6.2] - 2026-06-03
 
-First family-alignment release. Pure housekeeping — no behavior changes
+First family-alignment release. Pure housekeeping, no behavior changes
 to the probe itself. Brings wdgwars-api-tester to repo-hygiene parity
 with the other public feeders in the WDGoWars family.
 
 ### Added
 
 - `CHANGELOG.md` (this file), back-filled from git history.
-- `run.sh` / `run.bat` — double-clickable forward to `python3 wdgwars_api_tester.py "$@"`.
-- `update.sh` / `update.bat` — fetch the latest single-file script from `main`.
-- `scripts/smoke.sh` — pre-release smoke (import + `--version` + `--help` + offline tests + mock-server roundtrip).
+- `run.sh` / `run.bat`, double-clickable forward to `python3 wdgwars_api_tester.py "$@"`.
+- `update.sh` / `update.bat`, fetch the latest single-file script from `main`.
+- `scripts/smoke.sh`: pre-release smoke (import + `--version` + `--help` + offline tests + mock-server roundtrip).
 - README `## Updating` section.
 
-## [0.6.1] — 2026-05-30
+## [0.6.1] - 2026-05-30
 
 ### Changed
 
@@ -580,13 +580,13 @@ with the other public feeders in the WDGoWars family.
   would have false-positived.
 - `AUTH-REDIRECT` added as a first-class verdict. A `3xx` whose `Location`
   points at `/login` is the auth gate working, but the endpoint is wired
-  through the web-session flow rather than returning `401` JSON — a routing
+  through the web-session flow rather than returning `401` JSON, a routing
   shape regression for an API caller, but not a security/availability issue.
   Does **not** escalate to `DEGRADED`.
 - Redirect-follow disabled for probes (we report the redirect target now, not
   the body the auth wall would have served us).
 
-## [0.6.0] — 2026-05-30
+## [0.6.0] - 2026-05-30
 
 ### Added
 
@@ -594,31 +594,31 @@ with the other public feeders in the WDGoWars family.
   member-territories, leaderboard, bounties, signed-upload, me-aps, aircraft,
   meshcore).
 
-## [0.5.0] — 2026-05-30
+## [0.5.0] - 2026-05-30
 
 ### Added
 
 - Offline-by-default integration tests (`integration_test.py`).
 - `mock_wdgwars.py` standalone scenario server.
 
-## [0.4.0] — 2026-05-29
+## [0.4.0] - 2026-05-29
 
 ### Added
 
-- `--alert-webhook URL` — universal JSON POST on state change. Payload carries
+- `--alert-webhook URL`: universal JSON POST on state change. Payload carries
   both `text` and `content` keys so Discord / Slack / n8n / PagerDuty consume
   the same URL without per-service flags.
-- `--exec-on-change CMD` — arbitrary shell command on state change with
+- `--exec-on-change CMD`: arbitrary shell command on state change with
   `WDGWARS_*` env vars exported.
 
-## [0.3.0] — 2026-05-29
+## [0.3.0] - 2026-05-29
 
 ### Added
 
-- `--alert-telegram` — native Telegram self-paging in `--watch` mode. No
+- `--alert-telegram`: native Telegram self-paging in `--watch` mode. No
   external bridge required; pure stdlib `urllib` to the Bot API.
 
-## [0.2.0] — 2026-05-29
+## [0.2.0] - 2026-05-29
 
 ### Added
 
@@ -628,7 +628,7 @@ with the other public feeders in the WDGoWars family.
 - `--watch SECONDS` polling with compact state-change deltas.
 - Unit test suite.
 
-## [0.1.0] — 2026-05-29
+## [0.1.0] - 2026-05-29
 
 ### Added
 

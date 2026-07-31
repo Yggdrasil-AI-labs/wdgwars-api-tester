@@ -23,10 +23,10 @@ Stdlib-only Python 3. No `pip install`. Single file.
 
 Sibling repos in the WDGWars feeder family:
 
-- [Muninn](https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars) — ADS-B feeder
-- [Heimdall](https://github.com/Yggdrasil-AI-labs/meshcore-to-wdgwars) — MeshCore LoRa feeder
-- [wigle-to-wdgwars](https://github.com/Yggdrasil-AI-labs/wigle-to-wdgwars) — WiGLE Wi-Fi/BLE feeder
-- [gungnir](https://github.com/Yggdrasil-AI-labs/gungnir) — shared HMAC transport library
+- [Muninn](https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars). ADS-B feeder
+- [Heimdall](https://github.com/Yggdrasil-AI-labs/meshcore-to-wdgwars). MeshCore LoRa feeder
+- [wigle-to-wdgwars](https://github.com/Yggdrasil-AI-labs/wigle-to-wdgwars). WiGLE Wi-Fi/BLE feeder
+- [gungnir](https://github.com/Yggdrasil-AI-labs/gungnir), shared HMAC transport library
 
 ## Quick start
 
@@ -37,7 +37,7 @@ python3 wdgwars_api_tester.py
 # Add www. and api. subdomains
 python3 wdgwars_api_tester.py --hosts all
 
-# Probe a custom host (staging, fork, local mock) — anything starting with
+# Probe a custom host (staging, fork, local mock) - anything starting with
 # http:// or https:// becomes the target instead of wdgwars.pl.
 python3 wdgwars_api_tester.py --hosts http://127.0.0.1:9999 --variants none
 
@@ -105,9 +105,9 @@ If no key is found, the `valid` variant is dropped automatically and only the
 | `leaderboard` | GET | `/api/leaderboard` | yes | 5 boards. 5-min snapshot. |
 | `bounties` | GET | `/api/bounties` | yes | Open bounties (max 200). Was 404 from 2026-06-03 onwards on the same regex-cascade bug as the original five handlers; fixed 2026-06-04. |
 | `team-messages` | GET | `/api/team/messages` | yes | Caller's gang messages list. |
-| `team-messages-id` | GET | `/api/team/messages/1` | yes | DELETE-only per spec — GET → 405 + `Allow: DELETE` post-2026-06-04. Healthy state is the METHOD verdict. |
+| `team-messages-id` | GET | `/api/team/messages/1` | yes | DELETE-only per spec. GET → 405 + `Allow: DELETE` post-2026-06-04. Healthy state is the METHOD verdict. |
 | `health-asked-for` | GET | `/api/health` | no | Doesn't exist yet. Asked for in bug #1. |
-| `stats-leak-check` | GET | `/api/stats` | no | Fires LEAK if body carries the LSWS admin-telemetry fingerprint. (locosp's 2026-05-30 fix landed — endpoint now 302s to login; rule tightened in v0.6.1 to detect content, not just status.) |
+| `stats-leak-check` | GET | `/api/stats` | no | Fires LEAK if body carries the LSWS admin-telemetry fingerprint. (locosp's 2026-05-30 fix landed, endpoint now 302s to login; rule tightened in v0.6.1 to detect content, not just status.) |
 | `api-sentinel-404-a/b/c` | GET | `/api/<random>` × 3 | no | Quorum fingerprint of the /api/ 404 page (2-of-3 majority required). |
 | `non-api-sentinel-404` | GET | `/<random>` | no | Fingerprints the non-/api/ 404 page. |
 | `changelog-control` | GET | `/changelog` | no | Public-page reachability control. |
@@ -118,11 +118,11 @@ If no key is found, the `valid` variant is dropped automatically and only the
 |---|---|
 | `OK` | 2xx response, body distinct from any 404 sentinel. |
 | `AUTH-REQUIRED` | 401. Endpoint is alive and rejecting the key with the spec-correct JSON shape. |
-| `AUTH-REDIRECT` | 3xx whose `Location` points at `/login...`. The auth gate is working, but the endpoint is wired through the web-session flow rather than returning 401 JSON — a routing-shape regression for an API caller, but not a security/availability issue. Does NOT escalate to DEGRADED. |
+| `AUTH-REDIRECT` | 3xx whose `Location` points at `/login...`. The auth gate is working, but the endpoint is wired through the web-session flow rather than returning 401 JSON, a routing-shape regression for an API caller, but not a security/availability issue. Does NOT escalate to DEGRADED. |
 | `REDIRECT-{n}` | 3xx whose `Location` does not match `/login` (catch-all so unexpected redirects don't masquerade as OK). |
 | `DEAD` | Body hash matches the /api/ 404 quorum sentinel. Route not bound. |
 | `DEAD-NONAPI` | Body matches the non-/api/ 404 sentinel. |
-| `LEAK` | Body carries the LiteSpeed admin-telemetry fingerprint (`lsphp_processes` / `top_domains` / `lsphp`). Generalized in v0.6.1 — fires on any probe, not just `stats-leak-check`. Tightened from "stats returned 200" because the bare-status rule false-positived once locosp's 2026-05-30 fix landed and `/api/stats` started 302ing to `/login`. |
+| `LEAK` | Body carries the LiteSpeed admin-telemetry fingerprint (`lsphp_processes` / `top_domains` / `lsphp`). Generalized in v0.6.1. Fires on any probe, not just `stats-leak-check`. Tightened from "stats returned 200" because the bare-status rule false-positived once locosp's 2026-05-30 fix landed and `/api/stats` started 302ing to `/login`. |
 | `404` | 404 response but body distinct from sentinels. |
 | `METHOD` | 405. Healthy endpoint, wrong verb. |
 | `ERROR` | Network/timeout/URL error. |
@@ -133,12 +133,12 @@ If no key is found, the `valid` variant is dropped automatically and only the
 
 The overall summary is one of:
 
-- `HEALTHY` — no DEAD, no ERROR, no LEAK.
-- `UNREACHABLE` — everything errored. DNS, no internet, host down.
-- `DEGRADED` — at least one probe DEAD.
-- `OUTAGE` — `/api/me` with a valid key is DEAD. Whole API surface is down.
-- `…+LEAK` — appended to any of the above when `/api/stats` is exposed.
-- `…+SENTINEL-DIVERGED` — appended when the 3 quorum sentinels couldn't agree on a fingerprint. DEAD detection is disabled for affected hosts; investigate before trusting results.
+- `HEALTHY`: no DEAD, no ERROR, no LEAK.
+- `UNREACHABLE`: everything errored. DNS, no internet, host down.
+- `DEGRADED`: at least one probe DEAD.
+- `OUTAGE`: `/api/me` with a valid key is DEAD. Whole API surface is down.
+- `…+LEAK`: appended to any of the above when `/api/stats` is exposed.
+- `…+SENTINEL-DIVERGED`: appended when the 3 quorum sentinels couldn't agree on a fingerprint. DEAD detection is disabled for affected hosts; investigate before trusting results.
 
 Exit code is `1` for DEGRADED/OUTAGE/UNREACHABLE/LEAK/SENTINEL-DIVERGED and `0` for HEALTHY.
 
@@ -173,16 +173,16 @@ python3 wdgwars_api_tester.py --watch 1800 \
   --outage-backoff-cap-seconds 14400
 ```
 
-`DEAD`, `AUTH-REQUIRED`, `AUTH-REDIRECT`, and other expected non-OK verdicts do NOT count toward the outage share — only `429` and transport-level `ERROR` do.
+`DEAD`, `AUTH-REQUIRED`, `AUTH-REDIRECT`, and other expected non-OK verdicts do NOT count toward the outage share. Only `429` and transport-level `ERROR` do.
 
 ## Liveness watchdog
 
-`--timeout` is a per-socket-read timeout, not a total deadline. A response that trickles bytes (or a half-open connection a CDN keeps warm) can block a read forever, freezing the single-threaded `--watch` loop while the process stays alive — so `systemctl is-active` reports `active` while alerting has silently died.
+`--timeout` is a per-socket-read timeout, not a total deadline. A response that trickles bytes (or a half-open connection a CDN keeps warm) can block a read forever, freezing the single-threaded `--watch` loop while the process stays alive, so `systemctl is-active` reports `active` while alerting has silently died.
 
 Two layers guard against this:
 
 - `--sweep-deadline SECONDS` (default 180, `0` disables): hard wall-clock ceiling on a single sweep. A sweep that exceeds it is abandoned and the loop continues with the next interval.
-- `--heartbeat-file PATH`: writes a small JSON heartbeat after every sweep (including abandoned ones, tagged `status=stalled`). An external watchdog reads it to tell a healthy-but-quiet loop from a wedged one — state-log freshness can't, because it only grows on transitions.
+- `--heartbeat-file PATH`: writes a small JSON heartbeat after every sweep (including abandoned ones, tagged `status=stalled`). An external watchdog reads it to tell a healthy-but-quiet loop from a wedged one, state-log freshness can't, because it only grows on transitions.
 
 `--check-stale SECONDS` is a one-shot watchdog: it reads the heartbeat file and exits `1` if the newest heartbeat is older than `SECONDS` (or missing), else `0`. With `--alert-webhook` it also POSTs a wedge alert. Run it from a short timer alongside the watch service:
 
@@ -202,19 +202,19 @@ Pick `--check-stale` at a comfortable multiple of `--watch` (here ~3×) so a sin
 
 ## Notification channels
 
-`--watch` mode supports three independent notification paths. Use one, two, or all three at once — they don't conflict.
+`--watch` mode supports three independent notification paths. Use one, two, or all three at once, they don't conflict.
 
 | Flag | Use when |
 |---|---|
 | `--alert-telegram` | You have a Telegram bot + chat. Easiest setup. |
 | `--alert-webhook URL` | You're on Discord, Slack, n8n, PagerDuty, or any service that takes a JSON POST. |
-| `--exec-on-change CMD` | None of the above fit — email, SMS, a Lambda, write to a database, pipe to logger. |
+| `--exec-on-change CMD` | None of the above fit. Email, SMS, a Lambda, write to a database, pipe to logger. |
 
 Failure in any one path logs a warning to stderr but never crashes the watch loop or blocks the others.
 
 ### Telegram self-paging
 
-In `--watch` mode the tool can post directly to a Telegram chat on every state change. No external broker, webhook service, or alerting infrastructure required — stdlib `urllib` to the Bot API and a chat id.
+In `--watch` mode the tool can post directly to a Telegram chat on every state change. No external broker, webhook service, or alerting infrastructure required, stdlib `urllib` to the Bot API and a chat id.
 
 ### Setup
 
@@ -267,7 +267,7 @@ The full payload:
 ```json
 {
   "text": "🚨 API status changed: ... (the human-readable string above)",
-  "content": "<same as text — Discord reads this>",
+  "content": "<same as text. Discord reads this>",
   "text_machine": "🚨 wdgwars-api-tester: HEALTHY → DEGRADED\n\n<deltas>\n\nverdicts: DEAD=2, ERROR=2, OK=13, ...",
   "title": "🚨 API status changed: ...",
   "kind": "regression",
@@ -288,13 +288,13 @@ The full payload:
 - **Discord** reads `content`. Drop in any channel webhook URL.
 - **Slack incoming webhooks** read `text`. Same drop-in.
 - **n8n / Zapier / Make** can pick the structured fields directly.
-- **PagerDuty Events v2** — wrap with `--exec-on-change` (it expects a different envelope).
-- **Custom HTTP handlers** — read whatever they need from the structured fields.
-- **Tools that parsed the old jargon `text`** — read `text_machine` instead. Same format as v0.9.0 and earlier.
+- **PagerDuty Events v2**: wrap with `--exec-on-change` (it expects a different envelope).
+- **Custom HTTP handlers**: read whatever they need from the structured fields.
+- **Tools that parsed the old jargon `text`**: read `text_machine` instead. Same format as v0.9.0 and earlier.
 
 ### Morning digest (`--digest URL`)
 
-Oneshot mode that runs every probe once and POSTs a daily summary to a webhook. Pair with a systemd timer firing at the local hour you want the digest to land — typically 08:00 — so a Discord/Slack channel gets one readable "what happened overnight" post per day. Mutually exclusive with `--watch`.
+Oneshot mode that runs every probe once and POSTs a daily summary to a webhook. Pair with a systemd timer firing at the local hour you want the digest to land, typically 08:00. So a Discord/Slack channel gets one readable "what happened overnight" post per day. Mutually exclusive with `--watch`.
 
 ```bash
 # Append every --watch state change to a state log
@@ -310,7 +310,7 @@ python3 wdgwars_api_tester.py --digest "$DISCORD_LOUD_WEBHOOK" \
 What the digest reads:
 
 ```
-Morning report — 2026-06-04
+Morning report, 2026-06-04
 
 API status right now: **all endpoints healthy**
 50 probes ran.
@@ -364,7 +364,7 @@ The command runs with `shell=True` and a 15-second timeout. Non-zero exit codes 
 
 ## Adapting the tool for your own service
 
-Single-file, MIT, stdlib only — fork is encouraged. The structure is designed to make these changes easy:
+Single-file, MIT, stdlib only. Fork is encouraged. The structure is designed to make these changes easy:
 
 - **Probe a different API.** Edit `build_probes()` to swap the endpoints, methods, and expected statuses. `DEFAULT_HOSTS` / `ALL_HOSTS` at the top change which hosts get probed.
 - **Add new probes.** Append `Probe(...)` entries to `build_probes()`. Each gets the same auth-variant matrix and verdict annotation automatically.
@@ -372,7 +372,7 @@ Single-file, MIT, stdlib only — fork is encouraged. The structure is designed 
 - **Customize the sentinel mechanism.** `SENTINEL_PROBES` and `_canonical_sentinel()` define the quorum logic. Change `SENTINEL_PROBES` to use more sentinels, or rewrite `_canonical_sentinel()` to use a different agreement rule.
 - **Different notification format.** Edit `_format_telegram_text()` or `_format_webhook_payload()` directly. Both are pure functions, easy to unit-test.
 
-If you ship a fork, MIT means clone-and-rename is fine — no need to credit upstream.
+If you ship a fork, MIT means clone-and-rename is fine. No need to credit upstream.
 
 ## Tests
 
@@ -389,26 +389,26 @@ python3 -m unittest test_wdgwars_api_tester
 ### Integration tests (offline by default)
 
 ```
-python3 integration_test.py                # offline — fast, safe, default
+python3 integration_test.py                # offline, fast, safe, default
 python3 integration_test.py --live         # also runs the live API check
 INTEGRATION_LIVE=1 python3 integration_test.py    # env var equivalent
 ```
 
-21 end-to-end scenarios. Default mode is **offline** — `integration_test.py` spawns local instances of `mock_wdgwars.py` (one per scenario, on random ports) and points the tester at them. The real `wdgwars.pl` is not touched, so the suite is safe to run on every push without adding tenant traffic to a small community-hosted API.
+21 end-to-end scenarios. Default mode is **offline**: `integration_test.py` spawns local instances of `mock_wdgwars.py` (one per scenario, on random ports) and points the tester at them. The real `wdgwars.pl` is not touched, so the suite is safe to run on every push without adding tenant traffic to a small community-hosted API.
 
 Coverage:
 
 - `--version`, `--help`, default one-shot, `--quiet`, `--json`, `--no-table`
 - Invalid `--variants` / `--hosts` rejection
-- **Scenario-specific verdict assertions** — the offline mock supports four states:
+- **Scenario-specific verdict assertions**: the offline mock supports four states:
   - `outage` → tester produces `DEGRADED+LEAK` (or `OUTAGE+LEAK` with a valid key)
   - `healthy` → tester produces `HEALTHY`
   - `partial` → tester produces `HEALTHY+LEAK` (API up but stats endpoint still leaking)
   - `diverged` → tester produces something with `+SENTINEL-DIVERGED` suffix
 - `--baseline` first-run creation + second-run stability (no diff against same scenario)
 - All three notification guard rails (`--alert-telegram` / `--alert-webhook` / `--exec-on-change` without `--watch` warn and disable)
-- End-to-end webhook dispatch — `_post_webhook` against a local capture server, payload assertions (Slack `text`, Discord `content`, structured `kind`/`overall`/`prev_overall`)
-- End-to-end exec dispatch — cross-platform Python env-capture helper confirms all `WDGWARS_*` env vars set correctly
+- End-to-end webhook dispatch, `_post_webhook` against a local capture server, payload assertions (Slack `text`, Discord `content`, structured `kind`/`overall`/`prev_overall`)
+- End-to-end exec dispatch, cross-platform Python env-capture helper confirms all `WDGWARS_*` env vars set correctly
 - `--live` opt-in: schema validation against the real `wdgwars.pl` (every documented probe appears in JSON output, 3-sentinel quorum produces ≤2 distinct hashes in non-diverged states)
 
 Offline run takes ~11 seconds. `--live` adds ~10-30 seconds for one real probe of `wdgwars.pl`. Exit 0 = all green.
@@ -441,8 +441,8 @@ curl -O https://raw.githubusercontent.com/Yggdrasil-AI-labs/wdgwars-api-tester/m
 
 ## Related
 
-- [wigle-to-wdgwars](https://github.com/Yggdrasil-AI-labs/wigle-to-wdgwars) — WiFi/BLE CSV uploader.
-- [adsb-to-wdgwars (Muninn)](https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars) — ADS-B uploader.
+- [wigle-to-wdgwars](https://github.com/Yggdrasil-AI-labs/wigle-to-wdgwars). WiFi/BLE CSV uploader.
+- [adsb-to-wdgwars (Muninn)](https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars). ADS-B uploader.
 
 ## License
 
