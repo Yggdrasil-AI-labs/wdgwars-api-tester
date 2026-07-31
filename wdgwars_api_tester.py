@@ -1773,6 +1773,30 @@ def diff_against_baseline(current: list[Result], baseline_path: Path) -> list[st
 
 # ───────────────────────────── CLI ────────────────────────────────────────────
 
+def webhooks_from_env(
+    alert_var: str = "WDGWARS_ALERT_WEBHOOKS",
+    silent_var: str = "WDGWARS_SILENT_WEBHOOK",
+) -> tuple[Optional[list[str]], Optional[str]]:
+    """Read webhook URLs from the environment.
+
+    Passing a webhook URL as a command-line flag puts it in
+    /proc/PID/cmdline, which is world readable, so any local user can lift
+    the credential from ps output. A webhook URL needs no other
+    authentication, so possession is enough to post. /proc/PID/environ is
+    readable only by the process owner and root, so the environment is the
+    safer transport.
+
+    alert_var is comma separated to preserve the fan-out that repeating
+    --alert-webhook provides. Blank entries are dropped. Returns
+    (alert_urls or None, silent_url or None) so callers can treat "unset"
+    and "set but empty" identically.
+    """
+    raw = os.environ.get(alert_var, "")
+    alerts = [u.strip() for u in raw.split(",") if u.strip()] or None
+    silent = os.environ.get(silent_var) or None
+    return alerts, silent
+
+
 def load_key(cli_key: Optional[str]) -> Optional[str]:
     if cli_key:
         return cli_key.strip()
@@ -1999,15 +2023,12 @@ def main(argv: Optional[list[str]] = None) -> int:
                         "TELEGRAM_CHAT_ID missing. Disabling.")
             args.alert_telegram = False
 
-    # Webhook URLs may also come from the environment. Passing them as flags
-    # puts them in /proc/PID/cmdline, which is world readable, so any local
-    # user can lift the credential. The environment is only readable by this
-    # process owner and root. WDGWARS_ALERT_WEBHOOKS is comma separated to
-    # preserve the fan-out that repeating --alert-webhook provides.
+    # Flags win; otherwise fall back to the environment. See
+    # webhooks_from_env for why the environment is preferred over argv.
+    _env_alerts, _env_silent = webhooks_from_env()
     if not args.alert_webhook:
-        _envw = os.environ.get("WDGWARS_ALERT_WEBHOOKS", "")
-        args.alert_webhook = [u.strip() for u in _envw.split(",") if u.strip()] or None
-    args.silent_webhook = args.silent_webhook or os.environ.get("WDGWARS_SILENT_WEBHOOK") or None
+        args.alert_webhook = _env_alerts
+    args.silent_webhook = args.silent_webhook or _env_silent
 
     if (args.alert_webhook or args.silent_webhook or args.exec_on_change) and not args.watch:
         log.warning("--alert-webhook, --silent-webhook, and --exec-on-change "

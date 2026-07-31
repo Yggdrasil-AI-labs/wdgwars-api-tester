@@ -21,6 +21,7 @@ Run with: python -m unittest test_webhook_and_hooks
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 import time
@@ -39,6 +40,7 @@ from wdgwars_api_tester import (
     _write_heartbeat,
     diff_against_baseline,
     load_key,
+    webhooks_from_env,
 )
 
 
@@ -342,6 +344,64 @@ class TestSecondsToNextMidnightDefaultNow(unittest.TestCase):
             via_default = _seconds_to_next_midnight_utc()
         via_explicit = _seconds_to_next_midnight_utc(fixed)
         self.assertEqual(via_default, via_explicit)
+
+
+class WebhooksFromEnvTests(unittest.TestCase):
+    """webhooks_from_env: the environment transport for webhook URLs.
+
+    Passing a webhook URL as a flag leaves it in /proc/PID/cmdline, which is
+    world readable, so any local user can lift the credential from ps. These
+    paths exist to keep it out of argv, so they are worth pinning down.
+    """
+
+    def setUp(self) -> None:
+        for var in ("WDGWARS_ALERT_WEBHOOKS", "WDGWARS_SILENT_WEBHOOK"):
+            self.addCleanup(os.environ.pop, var, None)
+            os.environ.pop(var, None)
+
+    def test_unset_returns_none_for_both(self):
+        self.assertEqual(webhooks_from_env(), (None, None))
+
+    def test_single_alert_url(self):
+        os.environ["WDGWARS_ALERT_WEBHOOKS"] = "https://example.invalid/a"
+        alerts, silent = webhooks_from_env()
+        self.assertEqual(alerts, ["https://example.invalid/a"])
+        self.assertIsNone(silent)
+
+    def test_comma_separated_preserves_fan_out(self):
+        os.environ["WDGWARS_ALERT_WEBHOOKS"] = (
+            "https://example.invalid/a,https://example.invalid/b"
+        )
+        alerts, _ = webhooks_from_env()
+        self.assertEqual(
+            alerts, ["https://example.invalid/a", "https://example.invalid/b"]
+        )
+
+    def test_whitespace_and_blank_entries_are_dropped(self):
+        os.environ["WDGWARS_ALERT_WEBHOOKS"] = (
+            " https://example.invalid/a , ,, https://example.invalid/b ,"
+        )
+        alerts, _ = webhooks_from_env()
+        self.assertEqual(
+            alerts, ["https://example.invalid/a", "https://example.invalid/b"]
+        )
+
+    def test_whitespace_only_is_treated_as_unset(self):
+        os.environ["WDGWARS_ALERT_WEBHOOKS"] = "   "
+        os.environ["WDGWARS_SILENT_WEBHOOK"] = ""
+        self.assertEqual(webhooks_from_env(), (None, None))
+
+    def test_silent_webhook_read_independently(self):
+        os.environ["WDGWARS_SILENT_WEBHOOK"] = "https://example.invalid/quiet"
+        alerts, silent = webhooks_from_env()
+        self.assertIsNone(alerts)
+        self.assertEqual(silent, "https://example.invalid/quiet")
+
+    def test_variable_names_are_overridable(self):
+        os.environ["CUSTOM_ALERTS"] = "https://example.invalid/z"
+        self.addCleanup(os.environ.pop, "CUSTOM_ALERTS", None)
+        alerts, _ = webhooks_from_env(alert_var="CUSTOM_ALERTS")
+        self.assertEqual(alerts, ["https://example.invalid/z"])
 
 
 if __name__ == "__main__":
