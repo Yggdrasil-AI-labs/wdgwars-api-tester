@@ -1999,6 +1999,16 @@ def main(argv: Optional[list[str]] = None) -> int:
                         "TELEGRAM_CHAT_ID missing. Disabling.")
             args.alert_telegram = False
 
+    # Webhook URLs may also come from the environment. Passing them as flags
+    # puts them in /proc/PID/cmdline, which is world readable, so any local
+    # user can lift the credential. The environment is only readable by this
+    # process owner and root. WDGWARS_ALERT_WEBHOOKS is comma separated to
+    # preserve the fan-out that repeating --alert-webhook provides.
+    if not args.alert_webhook:
+        _envw = os.environ.get("WDGWARS_ALERT_WEBHOOKS", "")
+        args.alert_webhook = [u.strip() for u in _envw.split(",") if u.strip()] or None
+    args.silent_webhook = args.silent_webhook or os.environ.get("WDGWARS_SILENT_WEBHOOK") or None
+
     if (args.alert_webhook or args.silent_webhook or args.exec_on_change) and not args.watch:
         log.warning("--alert-webhook, --silent-webhook, and --exec-on-change "
                     "require --watch; one-shot mode has no state to alert on. "

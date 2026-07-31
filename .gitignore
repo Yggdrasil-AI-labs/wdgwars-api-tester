@@ -19,3 +19,6 @@ lab/
 *.jsonl
 baseline.json
 snapshots/
+
+# Local pre-edit snapshots
+*.bak*
