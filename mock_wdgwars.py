@@ -98,6 +98,14 @@ UPLOAD_CSV_OK_BODY = json.dumps({
     "merged_samples": 0,
 }).encode()
 
+# Schema-rejection body for a WiGLE CSV missing a required column. Mirrors
+# the shape of the real OK body's error sibling closely enough for tests to
+# assert on it without needing to match the live server byte-for-byte.
+UPLOAD_CSV_SCHEMA_REJECTED_BODY = json.dumps({
+    "error": "invalid csv schema",
+    "detail": "missing required column: Type",
+}).encode()
+
 # /api/me/aps - caller's own AP rows. Top-level {ok:true, count, aps:[...]}.
 ME_APS_OK_BODY = json.dumps({
     "ok": True,
@@ -219,6 +227,25 @@ CHANGELOG_BODY = (b"<!doctype html><html><body><h1>Changelog</h1>"
 # ───────────────────────── Scenario behavior ─────────────────────────────────
 
 
+def _csv_schema_valid(body: bytes) -> bool:
+    """Cheap schema check for the multipart WiGLE CSV the tester uploads.
+
+    Real schema validation is out of scope for a stdlib test double; this
+    only needs to distinguish the tester's two known shapes so the mock can
+    exercise the read-only-by-default fix. It finds the WiGLE header row
+    (starts with ``MAC,SSID,AuthMode``) inside the raw multipart body and
+    checks it has the required trailing ``Type`` column. The tester's
+    default (non-ingest) body drops that column; ``--allow-ingest`` sends
+    the full 11-column header.
+    """
+    text = body.decode("utf-8", "replace")
+    for line in text.splitlines():
+        if line.startswith("MAC,SSID,AuthMode"):
+            cols = line.split(",")
+            return len(cols) >= 1 and cols[-1].strip() == "Type"
+    return False
+
+
 def _div_body(seed: str) -> bytes:
     """Generate a slightly-different styled 404 body. Used by `diverged`
     scenario to break the quorum (every sentinel path gets a unique body).
@@ -234,6 +261,11 @@ class MockHandler(http.server.BaseHTTPRequestHandler):
     scenario: str = "outage"
 
     server_version = "Mock-WDGWars/0.1"
+
+    # Populated per-request by `_handle` before `_route` runs, so route
+    # handlers that need the raw request body (schema-checking upload-csv)
+    # can read it without every route having to do its own rfile.read().
+    _body: bytes = b""
 
     def log_message(self, fmt, *args):
         pass  # silent. Integration tests are noisy enough
@@ -316,12 +348,16 @@ class MockHandler(http.server.BaseHTTPRequestHandler):
                 return 405, b"Method Not Allowed", "text/plain"
             if not api_key or api_key == "g" * 64:
                 return 401, b'{"error":"auth required"}', "application/json"
+            if not _csv_schema_valid(self._body):
+                return 400, UPLOAD_CSV_SCHEMA_REJECTED_BODY, "application/json"
             return 200, UPLOAD_CSV_OK_BODY, "application/json"
         if path == "/api/v2/upload-csv":
             if method != "POST":
                 return 405, b"Method Not Allowed", "text/plain"
             if not api_key or api_key == "g" * 64:
                 return 401, b'{"error":"auth required"}', "application/json"
+            if not _csv_schema_valid(self._body):
+                return 400, UPLOAD_CSV_SCHEMA_REJECTED_BODY, "application/json"
             return 202, V2_UPLOAD_CSV_ACCEPTED_BODY, "application/json"
         if path.startswith("/api/v2/upload-job/"):
             if method != "GET":
@@ -407,6 +443,8 @@ class MockHandler(http.server.BaseHTTPRequestHandler):
         return 404, b"Route not registered", "text/plain"
 
     def _handle(self):
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        self._body = self.rfile.read(length) if length else b""
         status, body, ct = self._route()
         self._send(status, body, ct)
 

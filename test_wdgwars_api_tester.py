@@ -788,5 +788,61 @@ class TestBuildProbes2026_06_03Surface(unittest.TestCase):
             )
 
 
+class TestUploadCsvIngestSafety(unittest.TestCase):
+    """Regression coverage for the upload-csv / v2-upload-csv ingest-safety
+    fix.
+
+    Confirmed bug: a default run's upload-csv/v2-upload-csv body used to be
+    a schema-valid WiGLE CSV, so a real key against a real server would
+    actually ingest synthetic access points with no opt-in and no preview.
+    A default run must never be able to do that; only ``--allow-ingest``
+    may restore the schema-valid body and the success-status expectations.
+    """
+
+    @staticmethod
+    def _csv_header_from_multipart(body: bytes) -> str:
+        text = body.decode("utf-8")
+        for line in text.splitlines():
+            if line.startswith("MAC,SSID,AuthMode"):
+                return line
+        raise AssertionError(f"no WiGLE CSV header found in body: {text!r}")
+
+    def test_default_build_probes_csv_body_is_schema_invalid(self):
+        probes = {p.name: p for p in build_probes()}
+        header = self._csv_header_from_multipart(probes["upload-csv"].body)
+        self.assertNotEqual(
+            header.split(",")[-1].strip(), "Type",
+            "default build_probes() body still carries the schema-valid "
+            "trailing Type column -- a default run can ingest real data",
+        )
+
+    def test_v2_upload_csv_shares_the_same_default_body(self):
+        probes = {p.name: p for p in build_probes()}
+        self.assertEqual(probes["upload-csv"].body, probes["v2-upload-csv"].body)
+
+    def test_default_upload_csv_probe_does_not_accept_200(self):
+        probes = {p.name: p for p in build_probes()}
+        self.assertNotIn(
+            200, probes["upload-csv"].expect_status,
+            "default upload-csv probe still treats 200 (successful "
+            "ingest) as an acceptable outcome",
+        )
+
+    def test_default_v2_upload_csv_probe_does_not_accept_202(self):
+        probes = {p.name: p for p in build_probes()}
+        self.assertNotIn(
+            202, probes["v2-upload-csv"].expect_status,
+            "default v2-upload-csv probe still treats 202 (job accepted) "
+            "as an acceptable outcome",
+        )
+
+    def test_allow_ingest_restores_schema_valid_body_and_success_codes(self):
+        probes = {p.name: p for p in build_probes(allow_ingest=True)}
+        header = self._csv_header_from_multipart(probes["upload-csv"].body)
+        self.assertEqual(header.split(",")[-1].strip(), "Type")
+        self.assertIn(200, probes["upload-csv"].expect_status)
+        self.assertIn(202, probes["v2-upload-csv"].expect_status)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -426,8 +426,17 @@ class IntegrationTests(unittest.TestCase):
         verdict OK, no error. Proves the custom_runner dispatch + the full
         async pipeline work end-to-end against a mock that follows the
         documented two-step contract.
+
+        Modified for the ingest-safety fix: the real round-trip now only
+        runs behind --allow-ingest (a default run sends a deliberately
+        schema-invalid body so it can never ingest into a real account --
+        see test_23/test_24 below). Without --allow-ingest this probe
+        would get the schema-rejection body's 400, not a real round-trip,
+        so this test opts in explicitly to keep exercising the mixed-Type
+        regression coverage it was written for.
         """
         rc, out, err = run_tool("--json", "--no-table",
+                                "--allow-ingest",
                                 "--key", "x" * 64,
                                 "--hosts", self.mock_url("healthy"),
                                 "--variants", "valid",
@@ -468,6 +477,62 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(v2[0]["verdict"], "DEAD",
                           f"v2 should be DEAD when styled-404 fingerprint "
                           f"matches; got {v2[0]}")
+
+    # ──────────── Ingest-safety fix (upload-csv / v2-upload-csv) ─────────
+
+    def test_23_default_run_never_sends_ingestible_upload_body(self):
+        """Confirmed bug: a default run's upload-csv/v2-upload-csv body
+        used to be schema-valid, so a real key against a real, healthy
+        server would actually ingest synthetic access points -- the
+        README's own quickstart with no opt-in and no preview. A default
+        run (no --allow-ingest) must never get a successful-ingest
+        response back, even from a server that is happy to accept it.
+        """
+        rc, out, err = run_tool("--json", "--no-table",
+                                "--key", "x" * 64,
+                                "--hosts", self.mock_url("healthy"),
+                                "--variants", "valid",
+                                timeout=60.0)
+        snap = json.loads(out)
+        upload = [r for r in snap["results"]
+                  if r["probe"] == "upload-csv" and r["auth"] == "valid"]
+        v2 = [r for r in snap["results"]
+              if r["probe"] == "v2-upload-csv" and r["auth"] == "valid"]
+        self.assertEqual(len(upload), 1, f"expected one upload-csv valid result, got {upload}")
+        self.assertEqual(len(v2), 1, f"expected one v2-upload-csv valid result, got {v2}")
+        self.assertNotEqual(
+            upload[0]["status"], 200,
+            f"default run must not receive a successful-ingest response "
+            f"from upload-csv; got {upload[0]}",
+        )
+        self.assertNotEqual(
+            v2[0]["status"], 200,
+            f"default run must not complete a real async ingest job on "
+            f"v2-upload-csv; got {v2[0]}",
+        )
+
+    def test_24_allow_ingest_flag_restores_real_ingest_and_warns(self):
+        """--allow-ingest is the explicit, non-interactive opt-in that
+        restores the schema-valid body and the real ingest round-trip,
+        and it must print a stderr warning naming the target host before
+        doing so.
+        """
+        rc, out, err = run_tool("--json", "--no-table",
+                                "--allow-ingest",
+                                "--key", "x" * 64,
+                                "--hosts", self.mock_url("healthy"),
+                                "--variants", "valid",
+                                timeout=60.0)
+        self.assertIn("--allow-ingest is set", err)
+        self.assertIn(self.mock_url("healthy"), err)
+        snap = json.loads(out)
+        v2 = [r for r in snap["results"]
+              if r["probe"] == "v2-upload-csv" and r["auth"] == "valid"]
+        self.assertEqual(len(v2), 1)
+        self.assertEqual(
+            v2[0]["status"], 200,
+            f"--allow-ingest should complete the real async round-trip; got {v2[0]}",
+        )
 
 
 # ──────────── Live-only tests (opt-in via --live or INTEGRATION_LIVE=1) ──

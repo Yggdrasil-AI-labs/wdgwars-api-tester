@@ -91,8 +91,8 @@ If no key is found, the `valid` variant is dropped automatically and only the
 | `team-id` | GET | `/api/team/1` | yes | Team lookup by numeric id (`--team-id` to change). |
 | `team-me` | GET | `/api/team/me` | yes | Caller's own gang. |
 | `upload-history` | GET | `/api/upload-history?limit=5` | yes | Added 2026-04-27. |
-| `upload-csv` | POST | `/api/upload-csv` | yes | Multipart WiGLE-1.6, mixed Types. |
-| `v2-upload-csv` | POST + GET | `/api/v2/upload-csv` → `/api/v2/upload-job/<id>` | yes | Async pipeline: POST 202 → poll until `done`/`failed` (6 polls @ 1s). Catches v2-parser regressions independent of v1. |
+| `upload-csv` | POST | `/api/upload-csv` | yes | Multipart WiGLE-1.6. Read-only by default (schema-invalid body, expects rejection); real ingest only under `--allow-ingest`. |
+| `v2-upload-csv` | POST + GET | `/api/v2/upload-csv` → `/api/v2/upload-job/<id>` | yes | Async pipeline. Read-only by default; under `--allow-ingest`, POST 202 → poll until `done`/`failed` (6 polls @ 1s), catching v2-parser regressions independent of v1. |
 | `signed-upload` | GET | `/api/upload/` | yes | HMAC JSON endpoint. GET → 405 if healthy. |
 | `me-aps` | GET | `/api/me/aps?limit=1` | yes | Caller's own AP read-back (supports `?since=` delta sync). |
 | `aircraft` | GET | `/api/aircraft` | yes | ADS-B live snapshot (top-level array). |
@@ -111,6 +111,40 @@ If no key is found, the `valid` variant is dropped automatically and only the
 | `api-sentinel-404-a/b/c` | GET | `/api/<random>` × 3 | no | Quorum fingerprint of the /api/ 404 page (2-of-3 majority required). |
 | `non-api-sentinel-404` | GET | `/<random>` | no | Fingerprints the non-/api/ 404 page. |
 | `changelog-control` | GET | `/changelog` | no | Public-page reachability control. |
+
+### Read-only by default (`--allow-ingest`)
+
+`upload-csv` and `v2-upload-csv` are the only two probes in the catalog
+that hit a state-mutating endpoint (everything else that mutates,
+including login, bounty accept, shop buy/activate, and team-message
+delete, is not probed at all; see `build_probes()`'s docstring for the
+full list and why).
+
+By default, both probes send a WiGLE CSV body with the required
+trailing `Type` column deliberately dropped. A healthy server rejects
+that body on schema before anything reaches the ingest path, so a
+default run, including the quick-start command at the top of this
+README run with a real key configured, can never write synthetic
+access points into your account.
+
+Pass `--allow-ingest` to opt in to the real thing: a schema-valid WiGLE
+CSV is sent, `upload-csv` expects a success status, and `v2-upload-csv`
+polls its async job through to completion. This is a genuine regression
+check (the mixed-Type payload catches a past silent unsupported-Type
+drop), which is why the capability exists, but it does submit real
+records to the target host under your configured key, so only pass it
+when you mean it. The tool prints a one-line warning to stderr naming
+the target host before the first upload probe runs; it never prompts
+or blocks waiting for confirmation, so it's safe to use in
+non-interactive scripts as long as you intend the flag.
+
+```bash
+# Read-only (default): rejection expected, nothing is ingested.
+python3 wdgwars_api_tester.py --variants valid
+
+# Opt in to a real upload under your configured key.
+python3 wdgwars_api_tester.py --variants valid --allow-ingest
+```
 
 ## Verdicts
 
@@ -281,7 +315,7 @@ The full payload:
   "by_verdict_human": ["13 endpoints healthy", "27 correctly rejecting ...", "..."],
   "action": "Non-upstream probe regressed. Investigate.",
   "tool": "wdgwars-api-tester",
-  "version": "0.13.3"
+  "version": "0.13.4"
 }
 ```
 

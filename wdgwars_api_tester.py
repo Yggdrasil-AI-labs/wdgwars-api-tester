@@ -25,7 +25,7 @@ Quickstart:
 """
 from __future__ import annotations
 
-__version__ = "0.13.3"
+__version__ = "0.13.4"
 GITHUB_URL = "https://github.com/Yggdrasil-AI-labs/wdgwars-api-tester"
 
 import argparse
@@ -106,24 +106,49 @@ class Probe:
     custom_runner: Optional[Callable] = None
 
 
-def _csv_probe_body() -> tuple[bytes, str]:
-    """Minimal multipart/form-data WiGLE CSV body for upload-csv probe.
+def _csv_probe_body(valid: bool = False) -> tuple[bytes, str]:
+    """Multipart/form-data WiGLE CSV body for the upload-csv probes.
 
     Five rows covering Types WIFI, BLE, GSM, LTE, NR_5G. The mixed-Type
     payload doubles as a regression check for the silent unsupported-Type
-    drop (the response counters should fully account for all 5 rows).
+    drop (the response counters should fully account for all 5 rows) --
+    but only when ``valid=True``.
+
+    ``valid=False`` (the default) drops the required trailing ``Type``
+    column from the header and every data row, so a healthy server rejects
+    the body on schema before anything reaches the ingest path. This is
+    what a default run sends: the tool must never be able to write
+    synthetic access points into a real account without the operator
+    opting in via ``--allow-ingest``.
+
+    ``valid=True`` restores the full 11-column schema and is only ever
+    used when ``--allow-ingest`` is passed -- it is a genuine regression
+    check for the silent unsupported-Type drop, so the capability is kept,
+    just gated behind explicit opt-in.
     """
+    header_cols = ["MAC", "SSID", "AuthMode", "FirstSeen", "Channel", "RSSI",
+                   "CurrentLatitude", "CurrentLongitude", "AltitudeMeters",
+                   "AccuracyMeters", "Type"]
+    rows = [
+        ["aa:bb:cc:dd:ee:01", "ProbeWifi", "[WPA2-PSK-CCMP][ESS]",
+         "2026-05-29 12:00:00", "6", "-55", "41.0", "-81.0", "200", "10", "WIFI"],
+        ["aa:bb:cc:dd:ee:02", "ProbeBle", "", "2026-05-29 12:00:01", "0",
+         "-60", "41.0", "-81.0", "200", "10", "BLE"],
+        ["aa:bb:cc:dd:ee:03", "ProbeGsm", "", "2026-05-29 12:00:02", "0",
+         "-70", "41.0", "-81.0", "200", "10", "GSM"],
+        ["aa:bb:cc:dd:ee:04", "ProbeLte", "", "2026-05-29 12:00:03", "0",
+         "-75", "41.0", "-81.0", "200", "10", "LTE"],
+        ["aa:bb:cc:dd:ee:05", "ProbeNr", "", "2026-05-29 12:00:04", "0",
+         "-80", "41.0", "-81.0", "200", "10", "NR_5G"],
+    ]
+    if not valid:
+        header_cols = header_cols[:-1]
+        rows = [r[:-1] for r in rows]
+
     boundary = "----wdgwars-api-tester-" + secrets.token_hex(8)
-    csv = (
-        "WigleWifi-1.6,appRelease=v0.0.0\n"
-        "MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,"
-        "CurrentLongitude,AltitudeMeters,AccuracyMeters,Type\n"
-        "aa:bb:cc:dd:ee:01,ProbeWifi,[WPA2-PSK-CCMP][ESS],2026-05-29 12:00:00,6,-55,41.0,-81.0,200,10,WIFI\n"
-        "aa:bb:cc:dd:ee:02,ProbeBle,,2026-05-29 12:00:01,0,-60,41.0,-81.0,200,10,BLE\n"
-        "aa:bb:cc:dd:ee:03,ProbeGsm,,2026-05-29 12:00:02,0,-70,41.0,-81.0,200,10,GSM\n"
-        "aa:bb:cc:dd:ee:04,ProbeLte,,2026-05-29 12:00:03,0,-75,41.0,-81.0,200,10,LTE\n"
-        "aa:bb:cc:dd:ee:05,ProbeNr,,2026-05-29 12:00:04,0,-80,41.0,-81.0,200,10,NR_5G\n"
-    )
+    csv = "WigleWifi-1.6,appRelease=v0.0.0\n" + ",".join(header_cols) + "\n"
+    csv += "".join(",".join(r) + "\n" for r in rows)
+
     body = io.BytesIO()
     body.write(f"--{boundary}\r\n".encode())
     body.write(b'Content-Disposition: form-data; name="file"; filename="probe.wiglecsv"\r\n')
@@ -133,7 +158,7 @@ def _csv_probe_body() -> tuple[bytes, str]:
     return body.getvalue(), f"multipart/form-data; boundary={boundary}"
 
 
-def build_probes(team_id: int = 1) -> list[Probe]:
+def build_probes(team_id: int = 1, allow_ingest: bool = False) -> list[Probe]:
     """Build the probe list. ``team_id`` selects which numeric gang id to
     probe on ``/api/team/{id}``, defaults to 1 (typically the founder gang
     on any healthy instance). Override via ``--team-id`` for forks/staging.
@@ -150,10 +175,64 @@ def build_probes(team_id: int = 1) -> list[Probe]:
       bound route by LOCOSP; no probe because POSTing would side-effect.
     * ``DELETE /api/team/messages/{id}``, deletes a gang message.
 
+    ``POST /api/upload-csv`` and ``POST /api/v2/upload-csv`` ARE probed,
+    but with a caveat that puts them in the same family as the endpoints
+    above: a schema-valid body would mutate real account state (synthetic
+    access points ingested under the caller's key, which is exactly the
+    kind of bad data that trips upstream anti-cheat). Until this fix,
+    `upload-csv` sent a schema-valid body on every default run, which was
+    a bug, not a design choice. ``allow_ingest`` controls which body
+    ``_csv_probe_body()`` builds: by default (``allow_ingest=False``) the
+    body is deliberately schema-invalid (missing the required ``Type``
+    column) so a healthy server rejects it before anything reaches the
+    ingest path, and the probes' expected status is the rejection code
+    only. Only when the operator explicitly passes ``--allow-ingest`` does
+    this function request the schema-valid body and the success codes,
+    restoring the mixed-Type regression coverage described on
+    ``_csv_probe_body``.
+
     Catalog/list reads under the same prefixes are fine to probe (see
     ``team-messages`` and ``team-messages-id`` below for the read shape).
     """
-    csv_body, csv_ct = _csv_probe_body()
+    csv_body, csv_ct = _csv_probe_body(valid=allow_ingest)
+    if allow_ingest:
+        upload_csv_probe = Probe(
+            "upload-csv", "POST", "/api/upload-csv", True, (200, 400),
+            body=csv_body, content_type=csv_ct,
+            notes="Multipart WiGLE-1.6 with mixed Types. --allow-ingest is "
+                  "set: this body is schema-valid and WILL be ingested "
+                  "into the account behind the configured key.")
+        v2_upload_csv_probe = Probe(
+            "v2-upload-csv", "POST", "/api/v2/upload-csv", True, (202,),
+            body=csv_body, content_type=csv_ct,
+            custom_runner=_v2_upload_csv_round_trip,
+            notes="Async upload. --allow-ingest is set: POST 202 + "
+                  "{job_id, poll_url}; tester polls "
+                  "/api/v2/upload-job/<id> until status=done|failed (6 "
+                  "polls @ 1s). Result.status is rewritten to 200 on a "
+                  "clean round-trip so the OK verdict fires. This is a "
+                  "real ingest job.")
+    else:
+        upload_csv_probe = Probe(
+            "upload-csv", "POST", "/api/upload-csv", True, (400,),
+            body=csv_body, content_type=csv_ct,
+            notes="Multipart WiGLE-1.6 with the trailing Type column "
+                  "dropped. Read-only by default: the body is "
+                  "deliberately schema-invalid so the server rejects it "
+                  "on schema before any row reaches the ingest path. A "
+                  "200 here is a FAILURE, not a pass -- it means the "
+                  "server ingested a body it should have rejected. Pass "
+                  "--allow-ingest to exercise the real upload path with "
+                  "a schema-valid body.")
+        v2_upload_csv_probe = Probe(
+            "v2-upload-csv", "POST", "/api/v2/upload-csv", True, (400,),
+            body=csv_body, content_type=csv_ct,
+            custom_runner=_v2_upload_csv_round_trip,
+            notes="Same schema-invalid body as upload-csv by default. "
+                  "custom_runner still handles the response, but with no "
+                  "job_id in a schema-rejection body there is nothing to "
+                  "poll, so no async ingest job is created. Pass "
+                  "--allow-ingest for the real async round-trip.")
     return [
         Probe("api-root", "GET", "/api/", False, (200, 301, 302, 404),
               notes="Used as baseline for /api/ subtree shape."),
@@ -182,16 +261,8 @@ def build_probes(team_id: int = 1) -> list[Probe]:
                     "/me-side fix."),
         Probe("upload-history", "GET", "/api/upload-history?limit=5", True, (200,),
               notes="Added 2026-04-27 per /changelog."),
-        Probe("upload-csv", "POST", "/api/upload-csv", True, (200, 400),
-              body=csv_body, content_type=csv_ct,
-              notes="Multipart WiGLE-1.6 with mixed Types."),
-        Probe("v2-upload-csv", "POST", "/api/v2/upload-csv", True, (202,),
-              body=csv_body, content_type=csv_ct,
-              custom_runner=_v2_upload_csv_round_trip,
-              notes="Async upload. POST 202 + {job_id, poll_url}; tester "
-                    "polls /api/v2/upload-job/<id> until status=done|failed "
-                    "(6 polls @ 1s). Result.status is rewritten to 200 on "
-                    "a clean round-trip so the OK verdict fires."),
+        upload_csv_probe,
+        v2_upload_csv_probe,
         Probe("signed-upload", "GET", "/api/upload/", True, (200, 405),
               notes="HMAC signed JSON endpoint. GET should be 405 if healthy."),
         Probe("me-aps", "GET", "/api/me/aps?limit=1", True, (200,),
@@ -556,8 +627,9 @@ def _request(probe: Probe, host: str, auth: str, valid_key: Optional[str],
 
 
 def run_once(hosts: list[str], variants: tuple, valid_key: Optional[str],
-             timeout: float, team_id: int = 1) -> list[Result]:
-    probes = build_probes(team_id=team_id)
+             timeout: float, team_id: int = 1,
+             allow_ingest: bool = False) -> list[Result]:
+    probes = build_probes(team_id=team_id, allow_ingest=allow_ingest)
     results: list[Result] = []
     for host in hosts:
         for probe in probes:
@@ -1880,6 +1952,19 @@ def main(argv: Optional[list[str]] = None) -> int:
                    "1). Override when probing a fork/staging instance where "
                    "id 1 doesn't exist, or to vary the probed team between "
                    "runs.")
+    p.add_argument("--allow-ingest", action="store_true",
+                   help="Opt in to real ingest on upload-csv and "
+                   "v2-upload-csv. Without this flag (the default) those "
+                   "two probes send a deliberately schema-invalid body "
+                   "that any healthy server rejects, so a default run "
+                   "can never write synthetic access points into an "
+                   "account. With this flag, a real schema-valid WiGLE "
+                   "CSV is sent and, on the v2 endpoint, the tester polls "
+                   "the async job through to completion -- an operator "
+                   "with a real key WILL have that data ingested into "
+                   "their account. A warning is printed to stderr before "
+                   "the run starts. Not interactive; do not pass this in "
+                   "an unattended run unless that's actually intended.")
     p.add_argument("--json", action="store_true",
                    help="Emit JSON results to stdout. Table still goes to stderr.")
     p.add_argument("--no-table", action="store_true",
@@ -2044,9 +2129,18 @@ def main(argv: Optional[list[str]] = None) -> int:
                   "let --watch handle continuous monitoring.")
         return 2
 
+    if args.allow_ingest:
+        log.warning(
+            "WARNING: --allow-ingest is set. upload-csv and v2-upload-csv "
+            "will submit real, schema-valid access-point records to %s "
+            "under the configured API key.",
+            ", ".join(hosts),
+        )
+
     def one_pass() -> tuple[list[Result], dict, str]:
         results = run_once(hosts, variants, valid_key, args.timeout,
-                           team_id=args.team_id)
+                           team_id=args.team_id,
+                           allow_ingest=args.allow_ingest)
         s = summary(results)
         sig = state_signature(results)
         return results, s, sig

@@ -2,14 +2,33 @@
 
 ## What this tool does
 
-`wdgwars-api-tester` is a read-only HTTP probe. Each invocation issues
-a fixed catalog of requests against one or more configured hosts (by
+`wdgwars-api-tester` is read-only by default. Each invocation issues a
+fixed catalog of requests against one or more configured hosts (by
 default `https://wdgwars.pl`) and emits a verdict per route.
 
 - Requests are GET / POST / OPTIONS with synthetic, idempotent payloads.
-  Nothing the probe sends is intended to mutate server state. Endpoints
-  that would mutate (uploads, captures-accept) are exercised with
-  invalid bodies that the server rejects on schema, not on auth.
+  A default run never mutates server state. The two upload endpoints
+  (`upload-csv`, `v2-upload-csv`) are exercised with a deliberately
+  schema-invalid body (the required trailing `Type` column is dropped),
+  so a healthy server rejects the body on schema, not on auth, and no
+  row ever reaches the ingest path. Everything else that would mutate
+  (bounty accept, shop buy/activate, team-message delete, login) is not
+  probed at all; see `build_probes()`'s docstring in
+  `wdgwars_api_tester.py` for the full list.
+- `--allow-ingest` is the one explicit opt-in that changes this. Passing
+  it sends a real, schema-valid WiGLE CSV to `upload-csv` and
+  `v2-upload-csv`, and for the v2 endpoint the tester polls the async
+  job through to completion. Under a real key against the real host,
+  this WILL write synthetic access points into that account: bad data
+  landing under a player's name is what trips the upstream anti-cheat,
+  and the player carries that. The flag exists because the mixed-Type
+  payload is a genuine regression check for a past silent
+  unsupported-Type drop, so the capability is kept, just gated. A
+  one-line warning naming the target host is printed to stderr before
+  the first upload probe runs whenever this flag is set; there is no
+  interactive confirmation and the tool never blocks waiting for input,
+  so a non-interactive run is safe from hanging but the operator is
+  responsible for not passing the flag unless they mean it.
 - With `--watch`, the probe loops indefinitely, repeating the same
   catalog every N seconds and printing compact deltas on verdict
   changes.
@@ -55,6 +74,11 @@ That's the entire outbound footprint.
   variants get exercised. `garbage` sends an obvious sentinel string,
   never the real key; `valid` sends the real key only when the user
   explicitly invokes the variant.
+- `--variants valid` alone does not cause ingestion. The valid key is
+  sent on every probe, including the upload endpoints, but by default
+  their body is schema-invalid so the key gets a rejection, not an
+  accepted upload. Only `--variants valid` combined with `--allow-ingest`
+  submits a real upload under that key.
 
 ## What the API key can do
 

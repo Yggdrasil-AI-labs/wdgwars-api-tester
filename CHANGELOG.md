@@ -5,6 +5,45 @@ All notable changes to `wdgwars-api-tester`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.4] - 2026-08-12 - upload-csv is read-only by default
+
+### Security / Fixed
+
+- **Confirmed bug, now fixed: a default run could ingest real data.**
+  `upload-csv` and `v2-upload-csv` sent a schema-valid, well-formed WiGLE
+  CSV body on every default invocation (`--variants` defaults to
+  `none,garbage,valid`), and treated the server's successful-ingest
+  response as a PASS. Against the real host with a real key configured,
+  the README's own quickstart, this meant `python3 wdgwars_api_tester.py`
+  wrote five synthetic access points into the operator's live WDGWars
+  account with no opt-in and no preview. Bad data arriving under a
+  player's name is what trips the upstream anti-cheat, and the player
+  carries that. SECURITY.md's claim that mutating endpoints were
+  "exercised with invalid bodies that the server rejects on schema, not
+  on auth" was false; it now describes what the code actually does.
+- **Fix**: the CSV body built by `_csv_probe_body()` is now deliberately
+  schema-invalid by default (the required trailing `Type` column is
+  dropped), and both upload probes' expected status is the rejection
+  code only, so a 200/202 from a default run is a FAILURE, not a pass. A
+  new `--allow-ingest` flag is the explicit, non-interactive opt-in that
+  restores the schema-valid body, the success-status expectations, and
+  the real async round-trip on `v2-upload-csv`, kept because the
+  mixed-Type payload is a genuine regression check for a past silent
+  unsupported-Type drop. Passing `--allow-ingest` prints a one-line
+  warning to stderr, naming the target host, before the first upload
+  probe runs; there is no interactive prompt and the tool never blocks
+  waiting for confirmation.
+- `build_probes()`'s docstring now lists the upload endpoints alongside
+  the other deliberately-not-mutated routes (login, bounty accept, shop
+  buy/activate, team-message delete) so the policy described there
+  matches what the code does.
+- README and SECURITY.md updated to describe the read-only-by-default
+  behavior and what `--allow-ingest` submits when used.
+- `mock_wdgwars.py` now actually validates the upload-csv/v2-upload-csv
+  request body's schema (checks for the required trailing `Type`
+  column) instead of unconditionally accepting every POST, so the test
+  suite can exercise this fix against a mock instead of the live host.
+
 ## [0.13.3] - 2026-07-18 - Body-excerpt key scrub + org migration
 
 ### Fixed
