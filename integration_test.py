@@ -421,22 +421,20 @@ class IntegrationTests(unittest.TestCase):
 
     # ──────────── v2-upload-csv async round-trip ─────────────────────────
 
-    def test_21_v2_upload_csv_round_trip_against_healthy(self):
-        """Healthy mock: POST 202 → poll → done → status rewritten to 200,
-        verdict OK, no error. Proves the custom_runner dispatch + the full
-        async pipeline work end-to-end against a mock that follows the
-        documented two-step contract.
+    def test_21_v2_upload_csv_rejected_by_healthy_mock(self):
+        """Healthy mock: the tool has no ingest capability at all, so
+        v2-upload-csv always sends the deliberately schema-invalid body
+        and the mock's schema check rejects it with 400. No custom_runner,
+        no polling, no async job -- a plain single-shot rejection, same
+        shape as any other 400 probe.
 
-        Modified for the ingest-safety fix: the real round-trip now only
-        runs behind --allow-ingest (a default run sends a deliberately
-        schema-invalid body so it can never ingest into a real account --
-        see test_23/test_24 below). Without --allow-ingest this probe
-        would get the schema-rejection body's 400, not a real round-trip,
-        so this test opts in explicitly to keep exercising the mixed-Type
-        regression coverage it was written for.
+        This replaces the old real-round-trip test (POST 202 -> poll ->
+        done -> status rewritten to 200), which required --allow-ingest.
+        That flag and the async polling code path it drove
+        (`_v2_upload_csv_round_trip`) have both been removed; there is no
+        longer any way for this tool to complete a real ingest job.
         """
         rc, out, err = run_tool("--json", "--no-table",
-                                "--allow-ingest",
                                 "--key", "x" * 64,
                                 "--hosts", self.mock_url("healthy"),
                                 "--variants", "valid",
@@ -447,17 +445,17 @@ class IntegrationTests(unittest.TestCase):
               if r["probe"] == "v2-upload-csv" and r["auth"] == "valid"]
         self.assertEqual(len(v2), 1, f"expected one v2 valid result, got {v2}")
         r = v2[0]
-        self.assertEqual(r["status"], 200,
-                          f"v2 round-trip should rewrite status to 200 on done; "
-                          f"got {r}")
-        self.assertEqual(r["verdict"], "OK", f"verdict should be OK; got {r}")
+        self.assertEqual(r["status"], 400,
+                          f"v2-upload-csv must be rejected on schema, not "
+                          f"ingested; got {r}")
+        self.assertEqual(r["verdict"], "400", f"verdict should be plain 400; got {r}")
         self.assertEqual(r["error"], "")
 
     def test_22_v2_upload_csv_marked_dead_during_outage(self):
-        """Outage mock: POST hits the styled-404 fallthrough; custom_runner
-        short-circuits without polling because status != 2xx. The shared
-        body_md5 lines up with the sentinel fingerprint so DEAD verdict
-        fires, same blast radius as a v1 endpoint going dark.
+        """Outage mock: POST hits the styled-404 fallthrough via the plain
+        single-shot request path (no custom_runner, no polling). The
+        shared body_md5 lines up with the sentinel fingerprint so DEAD
+        verdict fires, same blast radius as a v1 endpoint going dark.
 
         `none` is included in variants so the sentinel probes (which are
         needs_auth=False) actually run and establish the canonical /api/
@@ -478,15 +476,18 @@ class IntegrationTests(unittest.TestCase):
                           f"v2 should be DEAD when styled-404 fingerprint "
                           f"matches; got {v2[0]}")
 
-    # ──────────── Ingest-safety fix (upload-csv / v2-upload-csv) ─────────
+    # ──────────── No ingest capability (upload-csv / v2-upload-csv) ──────
 
-    def test_23_default_run_never_sends_ingestible_upload_body(self):
-        """Confirmed bug: a default run's upload-csv/v2-upload-csv body
+    def test_23_run_never_sends_ingestible_upload_body(self):
+        """Confirmed history: a default run's upload-csv/v2-upload-csv body
         used to be schema-valid, so a real key against a real, healthy
         server would actually ingest synthetic access points -- the
-        README's own quickstart with no opt-in and no preview. A default
-        run (no --allow-ingest) must never get a successful-ingest
-        response back, even from a server that is happy to accept it.
+        README's own quickstart with no opt-in and no preview. That gap
+        was first closed by gating the schema-valid body behind
+        --allow-ingest, and is now closed permanently: there is no flag,
+        env var, or code path left that builds a schema-valid body, so a
+        run must never get a successful-ingest response back, even from a
+        server that is happy to accept one.
         """
         rc, out, err = run_tool("--json", "--no-table",
                                 "--key", "x" * 64,
@@ -502,20 +503,23 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(len(v2), 1, f"expected one v2-upload-csv valid result, got {v2}")
         self.assertNotEqual(
             upload[0]["status"], 200,
-            f"default run must not receive a successful-ingest response "
+            f"run must not receive a successful-ingest response "
             f"from upload-csv; got {upload[0]}",
         )
         self.assertNotEqual(
             v2[0]["status"], 200,
-            f"default run must not complete a real async ingest job on "
+            f"run must not complete a real async ingest job on "
             f"v2-upload-csv; got {v2[0]}",
         )
+        self.assertEqual(upload[0]["verdict"], "400")
+        self.assertEqual(v2[0]["verdict"], "400")
 
-    def test_24_allow_ingest_flag_restores_real_ingest_and_warns(self):
-        """--allow-ingest is the explicit, non-interactive opt-in that
-        restores the schema-valid body and the real ingest round-trip,
-        and it must print a stderr warning naming the target host before
-        doing so.
+    def test_24_allow_ingest_flag_no_longer_exists(self):
+        """--allow-ingest used to be the explicit, non-interactive opt-in
+        that restored the schema-valid body and a real ingest round-trip.
+        It has been removed outright, not just defaulted off: passing it
+        must fail argparse with a nonzero exit and an "unrecognized
+        arguments" style error, never be silently accepted.
         """
         rc, out, err = run_tool("--json", "--no-table",
                                 "--allow-ingest",
@@ -523,16 +527,9 @@ class IntegrationTests(unittest.TestCase):
                                 "--hosts", self.mock_url("healthy"),
                                 "--variants", "valid",
                                 timeout=60.0)
-        self.assertIn("--allow-ingest is set", err)
-        self.assertIn(self.mock_url("healthy"), err)
-        snap = json.loads(out)
-        v2 = [r for r in snap["results"]
-              if r["probe"] == "v2-upload-csv" and r["auth"] == "valid"]
-        self.assertEqual(len(v2), 1)
-        self.assertEqual(
-            v2[0]["status"], 200,
-            f"--allow-ingest should complete the real async round-trip; got {v2[0]}",
-        )
+        self.assertNotEqual(rc, 0, f"--allow-ingest must be rejected; stderr={err}")
+        self.assertIn("unrecognized arguments", err)
+        self.assertIn("--allow-ingest", err)
 
 
 # ──────────── Live-only tests (opt-in via --live or INTEGRATION_LIVE=1) ──

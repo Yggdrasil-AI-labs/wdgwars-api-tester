@@ -231,12 +231,13 @@ def _csv_schema_valid(body: bytes) -> bool:
     """Cheap schema check for the multipart WiGLE CSV the tester uploads.
 
     Real schema validation is out of scope for a stdlib test double; this
-    only needs to distinguish the tester's two known shapes so the mock can
-    exercise the read-only-by-default fix. It finds the WiGLE header row
-    (starts with ``MAC,SSID,AuthMode``) inside the raw multipart body and
-    checks it has the required trailing ``Type`` column. The tester's
-    default (non-ingest) body drops that column; ``--allow-ingest`` sends
-    the full 11-column header.
+    only needs to distinguish the tester's two known body shapes so the
+    mock can exercise the no-ingest-capability guarantee. It finds the
+    WiGLE header row (starts with ``MAC,SSID,AuthMode``) inside the raw
+    multipart body and checks it has the required trailing ``Type``
+    column. The tester's only CLI-reachable body drops that column; the
+    full 11-column header is only ever built directly by tests exercising
+    this mock's accept path, never by the tester itself.
     """
     text = body.decode("utf-8", "replace")
     for line in text.splitlines():

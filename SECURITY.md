@@ -2,33 +2,35 @@
 
 ## What this tool does
 
-`wdgwars-api-tester` is read-only by default. Each invocation issues a
-fixed catalog of requests against one or more configured hosts (by
-default `https://wdgwars.pl`) and emits a verdict per route.
+`wdgwars-api-tester` is read-only. It has no capability to write to
+WDGWars at all. Each invocation issues a fixed catalog of requests
+against one or more configured hosts (by default `https://wdgwars.pl`)
+and emits a verdict per route.
 
 - Requests are GET / POST / OPTIONS with synthetic, idempotent payloads.
-  A default run never mutates server state. The two upload endpoints
+  A run never mutates server state. The two upload endpoints
   (`upload-csv`, `v2-upload-csv`) are exercised with a deliberately
   schema-invalid body (the required trailing `Type` column is dropped),
   so a healthy server rejects the body on schema, not on auth, and no
-  row ever reaches the ingest path. Everything else that would mutate
-  (bounty accept, shop buy/activate, team-message delete, login) is not
-  probed at all; see `build_probes()`'s docstring in
-  `wdgwars_api_tester.py` for the full list.
-- `--allow-ingest` is the one explicit opt-in that changes this. Passing
-  it sends a real, schema-valid WiGLE CSV to `upload-csv` and
-  `v2-upload-csv`, and for the v2 endpoint the tester polls the async
-  job through to completion. Under a real key against the real host,
-  this WILL write synthetic access points into that account: bad data
-  landing under a player's name is what trips the upstream anti-cheat,
-  and the player carries that. The flag exists because the mixed-Type
-  payload is a genuine regression check for a past silent
-  unsupported-Type drop, so the capability is kept, just gated. A
-  one-line warning naming the target host is printed to stderr before
-  the first upload probe runs whenever this flag is set; there is no
-  interactive confirmation and the tool never blocks waiting for input,
-  so a non-interactive run is safe from hanging but the operator is
-  responsible for not passing the flag unless they mean it.
+  row ever reaches the ingest path. There is no flag, environment
+  variable, or code path anywhere in `wdgwars_api_tester.py` that
+  builds a schema-valid version of that body or reaches either upload
+  endpoint with one. Everything else that would mutate (bounty accept,
+  shop buy/activate, team-message delete, login) is not probed at all;
+  see `build_probes()`'s docstring in `wdgwars_api_tester.py` for the
+  full list.
+- An earlier release probed the upload endpoints with a schema-valid
+  body by default, which put synthetic access-point rows into live
+  player accounts under the caller's key: bad data landing under a
+  player's name is what trips the upstream anti-cheat, and the player
+  carries that. The fix that followed gated the real body behind an
+  explicit `--allow-ingest` opt-in flag. That flag, the code path it
+  drove (an async job poller for the v2 endpoint), and the schema-valid
+  body builder it unlocked have all been removed outright. This tool
+  has third-party users, so the capability existing at all, even
+  behind an opt-in, was judged too risky to keep. If a server ever
+  accepts the schema-invalid body anyway, that success is reported as
+  a failing `INGEST-UNEXPECTED` verdict, never as `OK`.
 - With `--watch`, the probe loops indefinitely, repeating the same
   catalog every N seconds and printing compact deltas on verdict
   changes.
@@ -80,11 +82,11 @@ That's the entire outbound footprint.
   variants get exercised. `garbage` sends an obvious sentinel string,
   never the real key; `valid` sends the real key only when the user
   explicitly invokes the variant.
-- `--variants valid` alone does not cause ingestion. The valid key is
-  sent on every probe, including the upload endpoints, but by default
-  their body is schema-invalid so the key gets a rejection, not an
-  accepted upload. Only `--variants valid` combined with `--allow-ingest`
-  submits a real upload under that key.
+- `--variants valid` does not cause ingestion, under any combination of
+  flags. The valid key is sent on every probe, including the upload
+  endpoints, but their body is always schema-invalid, so the key gets
+  a rejection, not an accepted upload. There is no flag that restores
+  a schema-valid body.
 
 ## What the API key can do
 
@@ -100,9 +102,12 @@ It cannot (as far as we know):
 - Withdraw money or make purchases.
 - Affect other users' accounts.
 
-If you suspect your key has leaked, rotate it on the WDGWars site and
-re-save it via `wigle-to-wdgwars --setup` (api-tester reads from the
-shared config path).
+If you suspect your key has leaked, rotate it on the WDGWars site, then
+save the new key to `~/.config/wdgwars-api-tester/wdgwars.key` or export
+`$WDGWARS_API_KEY`. This tool reads its own key file first; it no longer
+depends on the wigle feeder's shared config path (see "API key handling"
+above), so re-running that feeder's setup would leave you on the shared
+key this tool moved away from in v0.13.5.
 
 ## Exec-on-change
 

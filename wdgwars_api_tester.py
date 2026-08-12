@@ -25,7 +25,7 @@ Quickstart:
 """
 from __future__ import annotations
 
-__version__ = "0.13.5"
+__version__ = "0.13.6"
 GITHUB_URL = "https://github.com/Yggdrasil-AI-labs/wdgwars-api-tester"
 
 import argparse
@@ -97,34 +97,33 @@ class Probe:
     body: Optional[bytes] = None
     content_type: Optional[str] = None
     notes: str = ""
-    # Escape hatch for probes that need more than a single request (e.g.
-    # the async v2 upload pipeline: POST → 202 + job_id → poll until
-    # done). When set, `_request()` delegates to this callable instead of
-    # doing its normal single-shot flow. The callable receives the same
-    # arguments as `_request` and must return a fully-populated Result.
-    # Keep this rare. Most probes should fit the single-shot model.
+    # Escape hatch for probes that need more than a single request (e.g. a
+    # multi-step read-only flow: fetch one endpoint to discover an id, then
+    # probe a second endpoint with it). When set, `_request()` delegates to
+    # this callable instead of doing its normal single-shot flow. The
+    # callable receives the same arguments as `_request` and must return a
+    # fully-populated Result. Keep this rare. Most probes should fit the
+    # single-shot model.
     custom_runner: Optional[Callable] = None
 
 
 def _csv_probe_body(valid: bool = False) -> tuple[bytes, str]:
     """Multipart/form-data WiGLE CSV body for the upload-csv probes.
 
-    Five rows covering Types WIFI, BLE, GSM, LTE, NR_5G. The mixed-Type
-    payload doubles as a regression check for the silent unsupported-Type
-    drop (the response counters should fully account for all 5 rows) --
-    but only when ``valid=True``.
+    Five rows covering Types WIFI, BLE, GSM, LTE, NR_5G.
 
-    ``valid=False`` (the default) drops the required trailing ``Type``
-    column from the header and every data row, so a healthy server rejects
-    the body on schema before anything reaches the ingest path. This is
-    what a default run sends: the tool must never be able to write
-    synthetic access points into a real account without the operator
-    opting in via ``--allow-ingest``.
+    ``valid=False`` (the only value any CLI path ever requests) drops the
+    required trailing ``Type`` column from the header and every data row,
+    so a healthy server rejects the body on schema before anything reaches
+    the ingest path. This tool never writes to WDGWars: there is no flag,
+    env var, or code path that reaches ``valid=True`` from ``build_probes``
+    or ``main``.
 
-    ``valid=True`` restores the full 11-column schema and is only ever
-    used when ``--allow-ingest`` is passed -- it is a genuine regression
-    check for the silent unsupported-Type drop, so the capability is kept,
-    just gated behind explicit opt-in.
+    ``valid=True`` builds the full 11-column schema-valid body. No CLI path
+    reaches it. It exists solely so tests can construct a schema-valid body
+    to exercise the local mock's accept path directly (e.g. asserting that
+    a success response from an upload endpoint is treated as a failure,
+    never as an ingest the tool itself performs).
     """
     header_cols = ["MAC", "SSID", "AuthMode", "FirstSeen", "Channel", "RSSI",
                    "CurrentLatitude", "CurrentLongitude", "AltitudeMeters",
@@ -158,7 +157,7 @@ def _csv_probe_body(valid: bool = False) -> tuple[bytes, str]:
     return body.getvalue(), f"multipart/form-data; boundary={boundary}"
 
 
-def build_probes(team_id: int = 1, allow_ingest: bool = False) -> list[Probe]:
+def build_probes(team_id: int = 1) -> list[Probe]:
     """Build the probe list. ``team_id`` selects which numeric gang id to
     probe on ``/api/team/{id}``, defaults to 1 (typically the founder gang
     on any healthy instance). Override via ``--team-id`` for forks/staging.
@@ -174,65 +173,48 @@ def build_probes(team_id: int = 1, allow_ingest: bool = False) -> list[Probe]:
       and bounties.php; fixed 2026-06-04 in the same pass. Confirmed as a
       bound route by LOCOSP; no probe because POSTing would side-effect.
     * ``DELETE /api/team/messages/{id}``, deletes a gang message.
+    * ``POST /api/upload-csv`` and ``POST /api/v2/upload-csv``, would
+      ingest synthetic access points into the account behind the
+      configured key. This tool is for reading the API surface, not
+      writing to it, and has third-party users -- the capability existing
+      at all, even behind an opt-in flag, was the risk. An earlier release
+      probed these by default with a schema-valid body, which put
+      synthetic rows into live accounts; the fix that followed gated the
+      real body behind ``--allow-ingest``. Neither the default behavior
+      nor the flag exists anymore. There is no code path in this file
+      that can produce a schema-valid upload body or reach either
+      endpoint with one.
 
-    ``POST /api/upload-csv`` and ``POST /api/v2/upload-csv`` ARE probed,
-    but with a caveat that puts them in the same family as the endpoints
-    above: a schema-valid body would mutate real account state (synthetic
-    access points ingested under the caller's key, which is exactly the
-    kind of bad data that trips upstream anti-cheat). Until this fix,
-    `upload-csv` sent a schema-valid body on every default run, which was
-    a bug, not a design choice. ``allow_ingest`` controls which body
-    ``_csv_probe_body()`` builds: by default (``allow_ingest=False``) the
-    body is deliberately schema-invalid (missing the required ``Type``
-    column) so a healthy server rejects it before anything reaches the
-    ingest path, and the probes' expected status is the rejection code
-    only. Only when the operator explicitly passes ``--allow-ingest`` does
-    this function request the schema-valid body and the success codes,
-    restoring the mixed-Type regression coverage described on
-    ``_csv_probe_body``.
+    ``upload-csv`` and ``v2-upload-csv`` ARE still probed below, but only
+    with a body ``_csv_probe_body()`` builds deliberately schema-invalid
+    (the required trailing ``Type`` column is dropped), so a healthy
+    server rejects it before anything reaches the ingest path. Confirming
+    that rejection is legitimate read-only information: it is the whole
+    point of the tool. ``annotate_verdicts()`` also treats any success
+    status from either probe as a failed verdict, never a pass, so even a
+    server bug that accepts the malformed body surfaces as a problem
+    instead of a silent OK.
 
     Catalog/list reads under the same prefixes are fine to probe (see
     ``team-messages`` and ``team-messages-id`` below for the read shape).
     """
-    csv_body, csv_ct = _csv_probe_body(valid=allow_ingest)
-    if allow_ingest:
-        upload_csv_probe = Probe(
-            "upload-csv", "POST", "/api/upload-csv", True, (200, 400),
-            body=csv_body, content_type=csv_ct,
-            notes="Multipart WiGLE-1.6 with mixed Types. --allow-ingest is "
-                  "set: this body is schema-valid and WILL be ingested "
-                  "into the account behind the configured key.")
-        v2_upload_csv_probe = Probe(
-            "v2-upload-csv", "POST", "/api/v2/upload-csv", True, (202,),
-            body=csv_body, content_type=csv_ct,
-            custom_runner=_v2_upload_csv_round_trip,
-            notes="Async upload. --allow-ingest is set: POST 202 + "
-                  "{job_id, poll_url}; tester polls "
-                  "/api/v2/upload-job/<id> until status=done|failed (6 "
-                  "polls @ 1s). Result.status is rewritten to 200 on a "
-                  "clean round-trip so the OK verdict fires. This is a "
-                  "real ingest job.")
-    else:
-        upload_csv_probe = Probe(
-            "upload-csv", "POST", "/api/upload-csv", True, (400,),
-            body=csv_body, content_type=csv_ct,
-            notes="Multipart WiGLE-1.6 with the trailing Type column "
-                  "dropped. Read-only by default: the body is "
-                  "deliberately schema-invalid so the server rejects it "
-                  "on schema before any row reaches the ingest path. A "
-                  "200 here is a FAILURE, not a pass -- it means the "
-                  "server ingested a body it should have rejected. Pass "
-                  "--allow-ingest to exercise the real upload path with "
-                  "a schema-valid body.")
-        v2_upload_csv_probe = Probe(
-            "v2-upload-csv", "POST", "/api/v2/upload-csv", True, (400,),
-            body=csv_body, content_type=csv_ct,
-            custom_runner=_v2_upload_csv_round_trip,
-            notes="Same schema-invalid body as upload-csv by default. "
-                  "custom_runner still handles the response, but with no "
-                  "job_id in a schema-rejection body there is nothing to "
-                  "poll, so no async ingest job is created. Pass "
-                  "--allow-ingest for the real async round-trip.")
+    csv_body, csv_ct = _csv_probe_body()
+    upload_csv_probe = Probe(
+        "upload-csv", "POST", "/api/upload-csv", True, (400,),
+        body=csv_body, content_type=csv_ct,
+        notes="Multipart WiGLE-1.6 with the trailing Type column "
+              "dropped. Deliberately schema-invalid so the server "
+              "rejects it on schema before any row reaches the ingest "
+              "path. This tool has no ingest capability: a 200 here is "
+              "a FAILED verdict, not a pass -- it means the server "
+              "ingested a body it should have rejected.")
+    v2_upload_csv_probe = Probe(
+        "v2-upload-csv", "POST", "/api/v2/upload-csv", True, (400,),
+        body=csv_body, content_type=csv_ct,
+        notes="Same schema-invalid body as upload-csv. With no job_id in "
+              "a schema-rejection body there is nothing to poll, so no "
+              "async ingest job is ever created. A 202 here is a FAILED "
+              "verdict, not a pass.")
     return [
         Probe("api-root", "GET", "/api/", False, (200, 301, 302, 404),
               notes="Used as baseline for /api/ subtree shape."),
@@ -393,171 +375,6 @@ def _excerpt(body: bytes, valid_key: Optional[str]) -> str:
     return text[:200]
 
 
-def _v2_upload_csv_round_trip(probe: Probe, host: str, auth: str,
-                              valid_key: Optional[str],
-                              timeout: float) -> "Result":
-    """Exercise the full async /api/v2/upload-csv pipeline as one probe.
-
-    Three failure modes get cleanly distinguished:
-
-    * Auth gate broken: POST returns the styled 404 / something other than
-      a real 401 for missing/garbage keys. Reported with the actual HTTP
-      status from the POST so DEAD detection still fires.
-    * v2 parser regression: POST 202s + returns a job_id, but the job
-      keeps reporting `queued`/`processing` past our poll cap, or comes
-      back `failed`. Reported as ERROR with a descriptive `error` field.
-    * Healthy: POST 202 → poll reaches `done`. Result.status is rewritten
-      to 200 so the existing `OK` verdict fires (the round-trip succeeded
-      end-to-end, even though the HTTP code along the way was 202).
-
-    The single Result aggregates wall-clock across POST + every poll.
-    Polling cap: 6 attempts at 1s each (7s total budget on top of the
-    POST). That's generous for the documented "ideal for large files"
-    pipeline without blocking the tester for minutes if the queue stalls.
-    """
-    url = host + probe.path
-    headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
-    if probe.needs_auth or auth != "none":
-        if auth == "valid" and valid_key:
-            headers["X-API-Key"] = valid_key
-        elif auth == "garbage":
-            headers["X-API-Key"] = GARBAGE_KEY
-    if probe.content_type and probe.body is not None:
-        headers["Content-Type"] = probe.content_type
-
-    post_req = urllib.request.Request(url, data=probe.body, headers=headers,
-                                       method="POST")
-    t0 = time.monotonic()
-    status = 0
-    body = b""
-    resp_headers: dict[str, str] = {}
-    err = ""
-
-    try:
-        with _OPENER.open(post_req, timeout=timeout) as resp:
-            status = resp.status
-            body = resp.read(1024 * 1024)
-            resp_headers = {k.lower(): v for k, v in resp.headers.items()}
-    except urllib.error.HTTPError as e:
-        status = e.code
-        try:
-            body = e.read(1024 * 1024)
-        except Exception:
-            body = b""
-        try:
-            resp_headers = {k.lower(): v for k, v in e.headers.items()}
-        except Exception:
-            resp_headers = {}
-    except urllib.error.URLError as e:
-        err = f"URLError: {e.reason}"
-    except Exception as e:  # noqa: BLE001, diagnostic tool, log anything
-        err = f"{type(e).__name__}: {e}"
-
-    # Non-2xx or no body: short-circuit, no poll. DEAD detection still
-    # fires correctly because the body_md5 we return is the POST body's.
-    poll_url = ""
-    job_id: Optional[int] = None
-    if not err and 200 <= status < 300 and body:
-        try:
-            parsed = json.loads(body.decode("utf-8", "replace"))
-        except Exception:
-            parsed = None
-        if isinstance(parsed, dict):
-            poll_url = str(parsed.get("poll_url") or "")
-            jid = parsed.get("job_id")
-            if isinstance(jid, int):
-                job_id = jid
-
-    if poll_url or job_id is not None:
-        if poll_url and not poll_url.startswith(("http://", "https://")):
-            poll_url = host + poll_url
-        elif not poll_url:
-            poll_url = f"{host}/api/v2/upload-job/{job_id}"
-
-        terminal: Optional[str] = None
-        last_poll_body = body
-        last_poll_status = status
-        last_poll_headers = resp_headers
-        for _attempt in range(6):
-            time.sleep(1.0)
-            poll_req = urllib.request.Request(
-                poll_url, headers=headers, method="GET",
-            )
-            try:
-                with _OPENER.open(poll_req, timeout=timeout) as resp:
-                    last_poll_status = resp.status
-                    last_poll_body = resp.read(1024 * 1024)
-                    last_poll_headers = {k.lower(): v
-                                          for k, v in resp.headers.items()}
-            except urllib.error.HTTPError as e:
-                last_poll_status = e.code
-                try:
-                    last_poll_body = e.read(1024 * 1024)
-                except Exception:
-                    last_poll_body = b""
-                try:
-                    last_poll_headers = {k.lower(): v
-                                          for k, v in e.headers.items()}
-                except Exception:
-                    last_poll_headers = {}
-                terminal = f"poll HTTP {e.code}"
-                break
-            except urllib.error.URLError as e:
-                err = f"URLError on poll: {e.reason}"
-                break
-
-            try:
-                pj = json.loads(last_poll_body.decode("utf-8", "replace"))
-            except Exception:
-                pj = None
-            poll_status_field = (pj or {}).get("status") if isinstance(pj, dict) else None
-            if poll_status_field == "done":
-                terminal = "done"
-                break
-            if poll_status_field == "failed":
-                err = "job status=failed"
-                terminal = "failed"
-                break
-            # "queued" / "processing" / unknown → keep polling
-
-        if terminal == "done":
-            # Rewrite to 200 so the existing OK verdict fires. The
-            # round-trip is what's being probed, not the literal POST code.
-            status = 200
-        elif terminal is None and not err:
-            err = "v2 upload job did not terminate within poll budget"
-            status = last_poll_status or status
-        else:
-            status = last_poll_status or status
-
-        body = last_poll_body
-        resp_headers = last_poll_headers
-
-    elapsed_ms = int((time.monotonic() - t0) * 1000)
-    return Result(
-        probe=probe.name,
-        host=host,
-        auth=auth,
-        method=probe.method,
-        url=url,
-        status=status,
-        elapsed_ms=elapsed_ms,
-        body_len=len(body),
-        body_md5=hashlib.md5(body).hexdigest() if body else "",
-        content_type=resp_headers.get("content-type", ""),
-        cf_cache_status=resp_headers.get("cf-cache-status", ""),
-        x_request_id=resp_headers.get("x-request-id", ""),
-        server=resp_headers.get("server", ""),
-        error=err,
-        location=resp_headers.get("location", ""),
-        body_excerpt=_excerpt(body, valid_key),
-        leak_marker=next(
-            (f for f in LSWS_LEAK_FINGERPRINTS if f.encode() in body),
-            "",
-        ),
-    )
-
-
 def _request(probe: Probe, host: str, auth: str, valid_key: Optional[str],
              timeout: float) -> Result:
     if probe.custom_runner is not None:
@@ -627,9 +444,8 @@ def _request(probe: Probe, host: str, auth: str, valid_key: Optional[str],
 
 
 def run_once(hosts: list[str], variants: tuple, valid_key: Optional[str],
-             timeout: float, team_id: int = 1,
-             allow_ingest: bool = False) -> list[Result]:
-    probes = build_probes(team_id=team_id, allow_ingest=allow_ingest)
+             timeout: float, team_id: int = 1) -> list[Result]:
+    probes = build_probes(team_id=team_id)
     results: list[Result] = []
     for host in hosts:
         for probe in probes:
@@ -643,6 +459,12 @@ def run_once(hosts: list[str], variants: tuple, valid_key: Optional[str],
 
 
 SENTINEL_PROBES = ("api-sentinel-404-a", "api-sentinel-404-b", "api-sentinel-404-c")
+
+# upload-csv and v2-upload-csv send a deliberately schema-invalid body (see
+# `_csv_probe_body`) and are only ever probing that the server rejects it.
+# This tool has no ingest capability; if a server ever accepts that body
+# anyway, that is a bug worth surfacing loudly, not a pass.
+UPLOAD_PROBES = ("upload-csv", "v2-upload-csv")
 
 
 def _canonical_sentinel(results: list[Result], host: str) -> tuple[str, str]:
@@ -705,6 +527,12 @@ def annotate_verdicts(results: list[Result]) -> None:
         if r.leak_marker:
             r.verdict = "LEAK"
             continue
+        # A success status from an upload probe means the server accepted
+        # a body this tool deliberately built to be rejected -- surface it
+        # as a failure, never as OK, regardless of HTTP status class.
+        if r.probe in UPLOAD_PROBES and 200 <= r.status < 300:
+            r.verdict = "INGEST-UNEXPECTED"
+            continue
         api_md5, quorum_status = canonical.get(r.host, ("", "no-data"))
         nas = non_api_sentinels.get(r.host, "")
 
@@ -759,7 +587,8 @@ def annotate_verdicts(results: list[Result]) -> None:
 # ───────────────────────────── Rendering ──────────────────────────────────────
 
 VERDICT_PRIORITY = {
-    "ERROR": 0, "SENTINEL-DIVERGED": 1, "LEAK": 2, "DEAD": 3, "DEAD-NONAPI": 4,
+    "ERROR": 0, "SENTINEL-DIVERGED": 1, "LEAK": 2, "INGEST-UNEXPECTED": 2,
+    "DEAD": 3, "DEAD-NONAPI": 4,
     "SENTINEL-OUTLIER": 5, "404": 6, "METHOD": 7, "PAYLOAD-TOO-LARGE": 7,
     "REDIRECT-301": 8, "REDIRECT-303": 8, "REDIRECT-307": 8, "REDIRECT-308": 8,
     "AUTH-REQUIRED": 9, "AUTH-REDIRECT": 10, "OK": 11,
@@ -802,6 +631,12 @@ def summary(results: list[Result]) -> dict:
         overall = "OUTAGE"
     if by_verdict.get("LEAK", 0) > 0:
         overall = overall + "+LEAK"
+    # A server accepted a body this tool deliberately built to be
+    # rejected. This tool has no ingest capability of its own, but the
+    # server-side rejection this probe relies on just failed -- surface it
+    # loudly rather than let it hide behind an OK verdict.
+    if by_verdict.get("INGEST-UNEXPECTED", 0) > 0:
+        overall = overall + "+INGEST-UNEXPECTED"
     if by_verdict.get("ERROR", 0) > 0 and overall == "HEALTHY":
         overall = "UNREACHABLE"
     # Sentinel quorum failure: the diagnostic itself is broken (3 random
@@ -1979,19 +1814,6 @@ def main(argv: Optional[list[str]] = None) -> int:
                    "1). Override when probing a fork/staging instance where "
                    "id 1 doesn't exist, or to vary the probed team between "
                    "runs.")
-    p.add_argument("--allow-ingest", action="store_true",
-                   help="Opt in to real ingest on upload-csv and "
-                   "v2-upload-csv. Without this flag (the default) those "
-                   "two probes send a deliberately schema-invalid body "
-                   "that any healthy server rejects, so a default run "
-                   "can never write synthetic access points into an "
-                   "account. With this flag, a real schema-valid WiGLE "
-                   "CSV is sent and, on the v2 endpoint, the tester polls "
-                   "the async job through to completion -- an operator "
-                   "with a real key WILL have that data ingested into "
-                   "their account. A warning is printed to stderr before "
-                   "the run starts. Not interactive; do not pass this in "
-                   "an unattended run unless that's actually intended.")
     p.add_argument("--json", action="store_true",
                    help="Emit JSON results to stdout. Table still goes to stderr.")
     p.add_argument("--no-table", action="store_true",
@@ -2157,18 +1979,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                   "let --watch handle continuous monitoring.")
         return 2
 
-    if args.allow_ingest:
-        log.warning(
-            "WARNING: --allow-ingest is set. upload-csv and v2-upload-csv "
-            "will submit real, schema-valid access-point records to %s "
-            "under the configured API key.",
-            ", ".join(hosts),
-        )
-
     def one_pass() -> tuple[list[Result], dict, str]:
         results = run_once(hosts, variants, valid_key, args.timeout,
-                           team_id=args.team_id,
-                           allow_ingest=args.allow_ingest)
+                           team_id=args.team_id)
         s = summary(results)
         sig = state_signature(results)
         return results, s, sig

@@ -5,6 +5,49 @@ All notable changes to `wdgwars-api-tester`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.6] - 2026-08-12 - Ingest capability removed entirely
+
+### Removed
+
+- **This tool can no longer write to WDGWars, period.** `--allow-ingest`
+  and every code path it drove are gone: the `_v2_upload_csv_round_trip`
+  async job poller, the schema-valid-body branch of `build_probes()`,
+  and the CLI flag itself. Passing `--allow-ingest` now fails argparse
+  with "unrecognized arguments" instead of doing anything.
+- **Why:** an earlier release (before this tool had any gating at all)
+  sent a schema-valid WiGLE CSV to `upload-csv`/`v2-upload-csv` by
+  default, which put synthetic access points into live player accounts.
+  LOCOSP, who runs the server, had to clean up rows from that, and one
+  MAC in that cleanup also belonged to a real player's own capture, so
+  a careless delete would have destroyed real data. Bad data landing
+  under a player's name is exactly what trips the upstream anti-cheat,
+  and the player carries that, not this tool. The `--allow-ingest` gate
+  that followed made the capability opt-in but did not remove it, and
+  this tool has third-party users, so the capability existing at all
+  was the risk, not just the default. It is gone now, not just
+  defaulted off.
+
+### Changed
+
+- `upload-csv` and `v2-upload-csv` now always send the deliberately
+  schema-invalid body (the required trailing `Type` column dropped) and
+  only ever expect a rejection status. They stay in the probe catalog
+  because confirming that rejection is legitimate read-only information
+  about the API surface, which is the whole point of this tool.
+- `annotate_verdicts()` treats any success status from either upload
+  probe as a new `INGEST-UNEXPECTED` verdict, a failure, never `OK`,
+  in case a server bug ever accepts the malformed body anyway. It
+  escalates the overall summary the same way `LEAK` does
+  (`...+INGEST-UNEXPECTED`).
+- `_csv_probe_body()` keeps its `valid` parameter for test use only
+  (building a schema-valid body to exercise the local mock's accept
+  path directly); no code path in `main()` or `build_probes()` can
+  reach `valid=True`.
+- `build_probes()`'s docstring now lists `upload-csv` and
+  `v2-upload-csv` in the same "intentionally not probed for real"
+  family as login, bounty accept, shop buy/activate, and team-message
+  delete, rather than carving them out as an opt-in exception.
+
 ## [0.13.5] - 2026-08-12 - Its own key file, one key per tool
 
 ### Changed

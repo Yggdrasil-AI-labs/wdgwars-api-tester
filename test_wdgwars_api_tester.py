@@ -788,15 +788,17 @@ class TestBuildProbes2026_06_03Surface(unittest.TestCase):
             )
 
 
-class TestUploadCsvIngestSafety(unittest.TestCase):
-    """Regression coverage for the upload-csv / v2-upload-csv ingest-safety
-    fix.
+class TestUploadCsvNoIngestCapability(unittest.TestCase):
+    """Regression coverage for the removal of ingest capability entirely.
 
-    Confirmed bug: a default run's upload-csv/v2-upload-csv body used to be
-    a schema-valid WiGLE CSV, so a real key against a real server would
-    actually ingest synthetic access points with no opt-in and no preview.
-    A default run must never be able to do that; only ``--allow-ingest``
-    may restore the schema-valid body and the success-status expectations.
+    Confirmed history: a default run's upload-csv/v2-upload-csv body used
+    to be a schema-valid WiGLE CSV, so a real key against a real server
+    would actually ingest synthetic access points with no opt-in and no
+    preview. A later fix gated the schema-valid body behind an explicit
+    ``--allow-ingest`` flag. That flag has since been removed entirely:
+    this tool has no way, opt-in or otherwise, to make WDGWars ingest
+    anything. These tests assert that contract directly, not just the
+    absence of a flag name.
     """
 
     @staticmethod
@@ -807,41 +809,101 @@ class TestUploadCsvIngestSafety(unittest.TestCase):
                 return line
         raise AssertionError(f"no WiGLE CSV header found in body: {text!r}")
 
-    def test_default_build_probes_csv_body_is_schema_invalid(self):
+    def test_build_probes_csv_body_is_schema_invalid(self):
         probes = {p.name: p for p in build_probes()}
         header = self._csv_header_from_multipart(probes["upload-csv"].body)
         self.assertNotEqual(
             header.split(",")[-1].strip(), "Type",
-            "default build_probes() body still carries the schema-valid "
-            "trailing Type column -- a default run can ingest real data",
+            "build_probes() body carries the schema-valid trailing Type "
+            "column -- a run could ingest real data",
         )
 
-    def test_v2_upload_csv_shares_the_same_default_body(self):
+    def test_v2_upload_csv_shares_the_same_body(self):
         probes = {p.name: p for p in build_probes()}
         self.assertEqual(probes["upload-csv"].body, probes["v2-upload-csv"].body)
 
-    def test_default_upload_csv_probe_does_not_accept_200(self):
+    def test_upload_csv_probe_does_not_accept_200(self):
         probes = {p.name: p for p in build_probes()}
         self.assertNotIn(
             200, probes["upload-csv"].expect_status,
-            "default upload-csv probe still treats 200 (successful "
-            "ingest) as an acceptable outcome",
+            "upload-csv probe treats 200 (successful ingest) as an "
+            "acceptable outcome",
         )
 
-    def test_default_v2_upload_csv_probe_does_not_accept_202(self):
+    def test_v2_upload_csv_probe_does_not_accept_202(self):
         probes = {p.name: p for p in build_probes()}
         self.assertNotIn(
             202, probes["v2-upload-csv"].expect_status,
-            "default v2-upload-csv probe still treats 202 (job accepted) "
-            "as an acceptable outcome",
+            "v2-upload-csv probe treats 202 (job accepted) as an "
+            "acceptable outcome",
         )
 
-    def test_allow_ingest_restores_schema_valid_body_and_success_codes(self):
-        probes = {p.name: p for p in build_probes(allow_ingest=True)}
-        header = self._csv_header_from_multipart(probes["upload-csv"].body)
-        self.assertEqual(header.split(",")[-1].strip(), "Type")
-        self.assertIn(200, probes["upload-csv"].expect_status)
-        self.assertIn(202, probes["v2-upload-csv"].expect_status)
+    def test_upload_probes_carry_no_custom_runner(self):
+        # A custom_runner was previously used to poll the async v2 ingest
+        # job to completion. It is gone: both upload probes must fall
+        # through to the plain single-shot request path.
+        probes = {p.name: p for p in build_probes()}
+        self.assertIsNone(probes["upload-csv"].custom_runner)
+        self.assertIsNone(probes["v2-upload-csv"].custom_runner)
+
+    def test_build_probes_has_no_ingest_opt_in(self):
+        # build_probes() must not accept anything that could restore a
+        # schema-valid body. Passing an old-style opt-in kwarg must fail
+        # loudly (TypeError), not be silently ignored.
+        with self.assertRaises(TypeError):
+            build_probes(allow_ingest=True)  # type: ignore[call-arg]
+
+    def test_argument_parser_has_no_ingest_flag(self):
+        # Grep the built parser's registered option strings directly,
+        # rather than trying argv and checking for a SystemExit, so this
+        # test fails with a clear message instead of an argparse usage
+        # dump if the flag ever comes back under a different name.
+        import wdgwars_api_tester as mod
+        import inspect
+
+        source = inspect.getsource(mod.main)
+        self.assertNotIn(
+            "allow_ingest", source,
+            "main() still references an allow_ingest attribute",
+        )
+        self.assertNotIn(
+            "allow-ingest", source,
+            "main() still registers an --allow-ingest CLI flag",
+        )
+
+    def test_success_status_on_upload_csv_is_a_failed_verdict(self):
+        results = [
+            _r("upload-csv", auth="valid", status=200, body_len=42,
+               body_md5="deadbeef"),
+        ]
+        annotate_verdicts(results)
+        self.assertNotEqual(
+            results[0].verdict, "OK",
+            "a 200 from upload-csv must never be verdict OK",
+        )
+        self.assertEqual(results[0].verdict, "INGEST-UNEXPECTED")
+
+    def test_success_status_on_v2_upload_csv_is_a_failed_verdict(self):
+        results = [
+            _r("v2-upload-csv", auth="valid", status=202, body_len=42,
+               body_md5="deadbeef"),
+        ]
+        annotate_verdicts(results)
+        self.assertNotEqual(
+            results[0].verdict, "OK",
+            "a 202 from v2-upload-csv must never be verdict OK",
+        )
+        self.assertEqual(results[0].verdict, "INGEST-UNEXPECTED")
+
+    def test_rejection_status_on_upload_csv_is_not_penalized(self):
+        # The rejection itself is legitimate read-only information and
+        # must still resolve to a normal, non-failing verdict.
+        results = [
+            _r("upload-csv", auth="valid", status=400, body_len=42,
+               body_md5="deadbeef"),
+        ]
+        annotate_verdicts(results)
+        self.assertEqual(results[0].verdict, "400")
 
 
 if __name__ == "__main__":

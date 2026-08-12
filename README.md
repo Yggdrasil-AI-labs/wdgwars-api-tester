@@ -100,8 +100,8 @@ If no key is found, the `valid` variant is dropped automatically and only the
 | `team-id` | GET | `/api/team/1` | yes | Team lookup by numeric id (`--team-id` to change). |
 | `team-me` | GET | `/api/team/me` | yes | Caller's own gang. |
 | `upload-history` | GET | `/api/upload-history?limit=5` | yes | Added 2026-04-27. |
-| `upload-csv` | POST | `/api/upload-csv` | yes | Multipart WiGLE-1.6. Read-only by default (schema-invalid body, expects rejection); real ingest only under `--allow-ingest`. |
-| `v2-upload-csv` | POST + GET | `/api/v2/upload-csv` → `/api/v2/upload-job/<id>` | yes | Async pipeline. Read-only by default; under `--allow-ingest`, POST 202 → poll until `done`/`failed` (6 polls @ 1s), catching v2-parser regressions independent of v1. |
+| `upload-csv` | POST | `/api/upload-csv` | yes | Multipart WiGLE-1.6 with a deliberately schema-invalid body (required trailing `Type` column dropped). Read-only: the tool has no way to send a schema-valid body, so a healthy server's rejection is the only expected outcome. |
+| `v2-upload-csv` | POST | `/api/v2/upload-csv` | yes | Same schema-invalid body as `upload-csv`. Read-only, no async polling: with no `job_id` in a schema-rejection response there is nothing to poll. |
 | `signed-upload` | GET | `/api/upload/` | yes | HMAC JSON endpoint. GET → 405 if healthy. |
 | `me-aps` | GET | `/api/me/aps?limit=1` | yes | Caller's own AP read-back (supports `?since=` delta sync). |
 | `aircraft` | GET | `/api/aircraft` | yes | ADS-B live snapshot (top-level array). |
@@ -121,38 +121,38 @@ If no key is found, the `valid` variant is dropped automatically and only the
 | `non-api-sentinel-404` | GET | `/<random>` | no | Fingerprints the non-/api/ 404 page. |
 | `changelog-control` | GET | `/changelog` | no | Public-page reachability control. |
 
-### Read-only by default (`--allow-ingest`)
+### No ingest capability
 
-`upload-csv` and `v2-upload-csv` are the only two probes in the catalog
-that hit a state-mutating endpoint (everything else that mutates,
-including login, bounty accept, shop buy/activate, and team-message
-delete, is not probed at all; see `build_probes()`'s docstring for the
-full list and why).
+`upload-csv` and `v2-upload-csv` sit in `/api/upload-csv` and
+`/api/v2/upload-csv`, the same family of state-mutating endpoints as
+login, bounty accept, shop buy/activate, and team-message delete
+(everything else in that family is not probed at all; see
+`build_probes()`'s docstring for the full list and why).
 
-By default, both probes send a WiGLE CSV body with the required
-trailing `Type` column deliberately dropped. A healthy server rejects
-that body on schema before anything reaches the ingest path, so a
-default run, including the quick-start command at the top of this
-README run with a real key configured, can never write synthetic
-access points into your account.
+This tool is for reading the API surface, not writing to it, and it has
+third-party users. It has no way to make WDGWars ingest anything: both
+probes always send a WiGLE CSV body with the required trailing `Type`
+column deliberately dropped, and there is no flag, environment
+variable, or code path that builds the schema-valid version of that
+body. A healthy server rejects the malformed body on schema before
+anything reaches the ingest path, so a default run, including the
+quick-start command at the top of this README run with a real key
+configured, can never write synthetic access points into your account.
 
-Pass `--allow-ingest` to opt in to the real thing: a schema-valid WiGLE
-CSV is sent, `upload-csv` expects a success status, and `v2-upload-csv`
-polls its async job through to completion. This is a genuine regression
-check (the mixed-Type payload catches a past silent unsupported-Type
-drop), which is why the capability exists, but it does submit real
-records to the target host under your configured key, so only pass it
-when you mean it. The tool prints a one-line warning to stderr naming
-the target host before the first upload probe runs; it never prompts
-or blocks waiting for confirmation, so it's safe to use in
-non-interactive scripts as long as you intend the flag.
+Confirming that rejection is legitimate read-only information, which is
+why the endpoints stay in the catalog. If a server ever accepted the
+malformed body anyway, the tool would not report that as a pass: any
+success status from either probe is annotated `INGEST-UNEXPECTED`, a
+failing verdict, never `OK`.
+
+An earlier release probed these endpoints with a schema-valid body by
+default, which put synthetic access-point rows into live accounts. The
+fix that followed gated the real body behind an `--allow-ingest` flag.
+That flag has since been removed entirely, along with the code path it
+drove: there is no opt-in of any kind left.
 
 ```bash
-# Read-only (default): rejection expected, nothing is ingested.
 python3 wdgwars_api_tester.py --variants valid
-
-# Opt in to a real upload under your configured key.
-python3 wdgwars_api_tester.py --variants valid --allow-ingest
 ```
 
 ## Verdicts
@@ -166,6 +166,7 @@ python3 wdgwars_api_tester.py --variants valid --allow-ingest
 | `DEAD` | Body hash matches the /api/ 404 quorum sentinel. Route not bound. |
 | `DEAD-NONAPI` | Body matches the non-/api/ 404 sentinel. |
 | `LEAK` | Body carries the LiteSpeed admin-telemetry fingerprint (`lsphp_processes` / `top_domains` / `lsphp`). Generalized in v0.6.1. Fires on any probe, not just `stats-leak-check`. Tightened from "stats returned 200" because the bare-status rule false-positived once locosp's 2026-05-30 fix landed and `/api/stats` started 302ing to `/login`. |
+| `INGEST-UNEXPECTED` | `upload-csv` or `v2-upload-csv` returned a success status for the tool's deliberately schema-invalid body. This tool has no ingest capability; a success here means the server accepted a body it should have rejected. Never `OK`. |
 | `404` | 404 response but body distinct from sentinels. |
 | `METHOD` | 405. Healthy endpoint, wrong verb. |
 | `ERROR` | Network/timeout/URL error. |
@@ -181,9 +182,10 @@ The overall summary is one of:
 - `DEGRADED`: at least one probe DEAD.
 - `OUTAGE`: `/api/me` with a valid key is DEAD. Whole API surface is down.
 - `…+LEAK`: appended to any of the above when `/api/stats` is exposed.
+- `…+INGEST-UNEXPECTED`: appended when an upload probe's deliberately schema-invalid body was accepted instead of rejected.
 - `…+SENTINEL-DIVERGED`: appended when the 3 quorum sentinels couldn't agree on a fingerprint. DEAD detection is disabled for affected hosts; investigate before trusting results.
 
-Exit code is `1` for DEGRADED/OUTAGE/UNREACHABLE/LEAK/SENTINEL-DIVERGED and `0` for HEALTHY.
+Exit code is `1` for DEGRADED/OUTAGE/UNREACHABLE/LEAK/INGEST-UNEXPECTED/SENTINEL-DIVERGED and `0` for HEALTHY.
 
 ## Running on a schedule
 
