@@ -25,7 +25,7 @@ Quickstart:
 """
 from __future__ import annotations
 
-__version__ = "0.13.4"
+__version__ = "0.13.5"
 GITHUB_URL = "https://github.com/Yggdrasil-AI-labs/wdgwars-api-tester"
 
 import argparse
@@ -1869,15 +1869,41 @@ def webhooks_from_env(
     return alerts, silent
 
 
+def _own_key_file() -> Path:
+    """This tool's own key file. Resolved on call, never at import: a
+    module-level constant would bake in the real home directory and make the
+    lookup unpatchable, so a test would read the operator's live key."""
+    return Path.home() / ".config" / "wdgwars-api-tester" / "wdgwars.key"
+
+
+def _legacy_key_file() -> Path:
+    """The wigle feeder's key file, read as a last resort. See load_key."""
+    return Path.home() / ".config" / "wigle-to-wdgwars" / "wdgwars.key"
+
+
 def load_key(cli_key: Optional[str]) -> Optional[str]:
+    """Resolve the API key: --key, then $WDGWARS_API_KEY, then our own key file.
+
+    The legacy path is the wigle feeder's key file, which this tool used to read
+    as its last resort. That meant two tools sharing one credential by default,
+    so a key you wanted to cut off for one of them could not be cut off without
+    stopping the other. It still works so nobody's setup breaks, but it warns,
+    and a dedicated key in our own file takes precedence.
+    """
     if cli_key:
         return cli_key.strip()
     env = os.environ.get("WDGWARS_API_KEY")
     if env:
         return env.strip()
-    cfg = Path.home() / ".config" / "wigle-to-wdgwars" / "wdgwars.key"
-    if cfg.exists():
-        return cfg.read_text(encoding="utf-8").strip()
+    own = _own_key_file()
+    if own.exists():
+        return own.read_text(encoding="utf-8").strip()
+    legacy = _legacy_key_file()
+    if legacy.exists():
+        log.warning("using the wigle-to-wdgwars key file (%s). That is one key "
+                    "shared by two tools: revoking it stops both. Generate a "
+                    "key for this tool and save it to %s", legacy, own)
+        return legacy.read_text(encoding="utf-8").strip()
     return None
 
 
@@ -1944,7 +1970,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     p.add_argument("--variants", default="none,garbage,valid",
                    help="Comma list of auth variants to run (none,garbage,valid).")
     p.add_argument("--key", help="Override valid X-API-Key. Falls back to "
-                   "$WDGWARS_API_KEY then ~/.config/wigle-to-wdgwars/wdgwars.key.")
+                   "$WDGWARS_API_KEY then "
+                   "~/.config/wdgwars-api-tester/wdgwars.key.")
     p.add_argument("--timeout", type=float, default=15.0,
                    help="Per-request timeout in seconds (default 15).")
     p.add_argument("--team-id", type=int, default=1,
@@ -2088,7 +2115,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     valid_key = load_key(args.key)
     if "valid" in variants and not valid_key:
         log.warning("No valid key found. Dropping 'valid' from variants. "
-                    "Set $WDGWARS_API_KEY or ~/.config/wigle-to-wdgwars/wdgwars.key.")
+                    "Set $WDGWARS_API_KEY or save a key to %s",
+                    _own_key_file())
         variants = tuple(v for v in variants if v != "valid")
 
     # --quiet implies --no-table; it also suppresses --json.

@@ -59,8 +59,14 @@ That's the entire outbound footprint.
 ## API key handling
 
 - WDGWars key resolution: `--key` flag, then `$WDGWARS_API_KEY`, then
-  `~/.config/wigle-to-wdgwars/wdgwars.key` (the shared family config
-  path; api-tester does not save its own).
+  `~/.config/wdgwars-api-tester/wdgwars.key`. This tool never writes a key
+  itself, so that file is yours to create. Use a key generated for this tool
+  alone: keys are individually revocable, so a dedicated one can be cut off
+  without stopping a scheduled feeder upload.
+- The wigle feeder's `~/.config/wigle-to-wdgwars/wdgwars.key` is still read as
+  a last resort so existing setups keep working, but it logs a warning. It was
+  the only fallback in earlier versions, which meant two tools shared one
+  credential by default and neither could be revoked on its own.
 - The key is sent over HTTPS only, in the `X-API-Key` request header
   on `--variants valid` probes. TLS context is Python's
   `ssl.create_default_context()` default, system trust store,

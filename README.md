@@ -72,11 +72,20 @@ python3 wdgwars_api_tester.py --watch 60 \
 
 ## API key
 
-Same precedence as [wigle-to-wdgwars](https://github.com/Yggdrasil-AI-labs/wigle-to-wdgwars):
-
 1. `--key` CLI flag
 2. `$WDGWARS_API_KEY`
-3. `~/.config/wigle-to-wdgwars/wdgwars.key`
+3. `~/.config/wdgwars-api-tester/wdgwars.key`
+
+Generate a key just for this tool rather than reusing one you gave a feeder.
+Keys are named and individually revocable on your WDGWars profile page, so a
+dedicated key means you can cut this one off without stopping a scheduled
+upload. This tool never writes a key itself: create that file yourself, or use
+the env var.
+
+Older versions fell back to reading the wigle feeder's
+`~/.config/wigle-to-wdgwars/wdgwars.key`. That still works so nothing breaks,
+but it logs a warning, because one key shared by two tools cannot be revoked for
+one of them alone.
 
 If no key is found, the `valid` variant is dropped automatically and only the
 `none` and `garbage` variants run.
@@ -315,7 +324,7 @@ The full payload:
   "by_verdict_human": ["13 endpoints healthy", "27 correctly rejecting ...", "..."],
   "action": "Non-upstream probe regressed. Investigate.",
   "tool": "wdgwars-api-tester",
-  "version": "0.13.4"
+  "version": "0.13.5"
 }
 ```
 

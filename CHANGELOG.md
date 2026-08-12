@@ -5,6 +5,28 @@ All notable changes to `wdgwars-api-tester`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.5] - 2026-08-12 - Its own key file, one key per tool
+
+### Changed
+
+- **The key file is now `~/.config/wdgwars-api-tester/wdgwars.key`.** This tool
+  used to fall back to the wigle feeder's `~/.config/wigle-to-wdgwars/wdgwars.key`
+  as its only file source, which meant two tools shared one credential by
+  default and neither could be revoked without stopping the other. Generate a
+  key for this tool alone; keys are individually revocable on the profile page.
+  The tool still does not write a key itself, so create that file or use
+  `$WDGWARS_API_KEY`.
+- The feeder's path is still read as a last resort so no existing setup breaks,
+  but it logs a warning saying why a shared key is worse.
+
+### Fixed
+
+- Key paths are resolved per call rather than at import. A first pass at this
+  used module-level constants, which baked in the real home directory and made
+  the lookup unpatchable, so the test suite read the operator's live key file
+  and printed the key into the test output. `tests` now cover both the
+  precedence and the per-call resolution, so that cannot come back.
+
 ## [0.13.4] - 2026-08-12 - upload-csv is read-only by default
 
 ### Security / Fixed

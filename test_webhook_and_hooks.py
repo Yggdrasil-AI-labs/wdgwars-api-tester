@@ -29,6 +29,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import wdgwars_api_tester
 from wdgwars_api_tester import (
     DISCORD_CONTENT_LIMIT,
     _check_stale,
@@ -333,6 +334,35 @@ class TestLoadKey(unittest.TestCase):
                 with mock.patch("wdgwars_api_tester.Path.home",
                                 return_value=fake_home):
                     self.assertIsNone(load_key(None))
+
+    def test_own_key_file_wins_over_the_feeders(self) -> None:
+        """One key per tool: a key saved for this tool must beat the wigle
+        feeder's, so revoking one does not stop the other."""
+        with tempfile.TemporaryDirectory() as d:
+            fake_home = Path(d)
+            for tool, value in (("wdgwars-api-tester", " own-key \n"),
+                                ("wigle-to-wdgwars", " feeder-key \n")):
+                p = fake_home / ".config" / tool
+                p.mkdir(parents=True)
+                (p / "wdgwars.key").write_text(value, encoding="utf-8")
+            with mock.patch.dict("os.environ", {}, clear=True):
+                with mock.patch("wdgwars_api_tester.Path.home",
+                                return_value=fake_home):
+                    self.assertEqual(load_key(None), "own-key")
+
+    def test_key_paths_are_resolved_per_call_not_at_import(self) -> None:
+        """Guards a real leak: if the paths were module-level constants they
+        would bake in the operator's actual home, and this suite would read
+        their live key file instead of the temp one."""
+        with tempfile.TemporaryDirectory() as d:
+            fake_home = Path(d)
+            with mock.patch.dict("os.environ", {}, clear=True):
+                with mock.patch("wdgwars_api_tester.Path.home",
+                                return_value=fake_home):
+                    self.assertEqual(
+                        wdgwars_api_tester._own_key_file(),
+                        fake_home / ".config" / "wdgwars-api-tester"
+                        / "wdgwars.key")
 
 
 class TestSecondsToNextMidnightDefaultNow(unittest.TestCase):
