@@ -137,9 +137,10 @@ TERRITORIES_OK_BODY = json.dumps([
 MEMBER_TERRITORIES_OK_BODY = json.dumps({
     "ok": True,
     "grid_lat": 0.02,
-    "grid_lng": 0.03,
+    "grid_lng": 0.02,
     "cells": [{"lat": 41.0, "lng": -81.0, "color": "#a855f7",
-               "user_id": 1, "gang_id": 1, "gang": "MOCK", "count": 5}],
+               "user_id": 1, "users": 1, "gang_id": 1, "gang": "MOCK",
+               "count": 5, "relay": 0, "towers": 4}],
     "gang_hulls": [{"gang": "MOCK", "color": "#a855f7",
                      "hull": [[41.0, -81.0], [41.1, -81.0], [41.0, -81.1]]}],
 }).encode()

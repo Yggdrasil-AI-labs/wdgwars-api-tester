@@ -258,7 +258,7 @@ def build_probes(team_id: int = 1) -> list[Probe]:
         Probe("territories", "GET", "/api/territories", True, (200,),
               notes="Global gang convex hulls. Top-level array."),
         Probe("member-territories", "GET", "/api/member-territories", True, (200,),
-              notes="Cell-based grid (0.02° × 0.03° squares) + grid-traced "
+              notes="Cell-based grid (0.02° × 0.02° squares, verified live 2026-08-24) + grid-traced "
                     "gang hulls. 5-min cron snapshot."),
         Probe("member-territories-compact",
               "GET", "/api/member-territories?compact=1", True, (200,),
