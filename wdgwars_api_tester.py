@@ -221,7 +221,7 @@ def build_probes(team_id: int = 1) -> list[Probe]:
         Probe("me", "GET", "/api/me", True, (200,),
               notes="Auth + identity. With no/garbage key expect 401, not 404. "
                     "Since 2026-06-03 the response also carries `your_rank` "
-                    "(top_n=100, nulls for >N) and `recent_captures` (≤20 "
+                    "(top_n=50 as of 2026-08-24, nulls for >N) and `recent_captures` (≤20 "
                     "attacker-side). Body shape isn't asserted by the tester "
                     ". OK status is the contract, but a regression that "
                     "drops them would still surface via downstream consumers."),
