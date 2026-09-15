@@ -115,7 +115,7 @@ If no key is found, the `valid` variant is dropped automatically and only the
 | `bounties` | GET | `/api/bounties` | yes | Open bounties (max 200). Was 404 from 2026-06-03 onwards on the same regex-cascade bug as the original five handlers; fixed 2026-06-04. |
 | `team-messages` | GET | `/api/team/messages` | yes | Caller's gang messages list. 403 for an account in no gang is EXPECTED. |
 | `team-messages-id` | GET | `/api/team/messages/1` | yes | DELETE-only per spec. GET → 405 + `Allow: DELETE` post-2026-06-04. Healthy state is the METHOD verdict. 403 for an account in no gang is EXPECTED. |
-| `health` | GET | `/api/health` | no | Shipped 2026-09-15 (asked for in bug #1). Keyless DB liveness check: 200 `{ok,db,time}` or 503 if the database is down, `no-store`. 404 would mean a regression. |
+| `health` | GET | `/api/health` | no | Shipped 2026-09-15 (asked for in the 2026-05-29 outage disclosure, finding #1). Keyless DB liveness check: 200 `{ok,db,time}` or 503 if the database is down, `no-store`. 404 would mean a regression. |
 | `stats-leak-check` | GET | `/api/stats` | no | Fires LEAK if body carries the LSWS admin-telemetry fingerprint. (locosp's 2026-05-30 fix landed, endpoint now 302s to login; rule tightened in v0.6.1 to detect content, not just status.) |
 | `api-sentinel-404-a/b/c` | GET | `/api/<random>` × 3 | no | Quorum fingerprint of the /api/ 404 page (2-of-3 majority required). |
 | `non-api-sentinel-404` | GET | `/<random>` | no | Fingerprints the non-/api/ 404 page. |

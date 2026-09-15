@@ -32,6 +32,8 @@ probe account that is in no gang.
 ### Changed
 
 - `health-asked-for` is now `health`, and expects `(200,)` only. The
+  endpoint was asked for in the 2026-05-29 outage disclosure, finding #1,
+  as the way to detect that class of outage from outside without a key. The
   endpoint exists as of 2026-09-15: keyless, checks the database answers,
   200 `{"ok":true,"db":true,"time":...}` or 503 if the database is down,
   `no-store` so a cached healthy answer cannot mask a dead origin. A 404

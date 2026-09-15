@@ -306,7 +306,8 @@ def build_probes(team_id: int = 1) -> list[Probe]:
                     "returns 405 with `Allow: DELETE` (METHOD verdict, still "
                     "healthy). Operator-confirmed via the api-tester sweep."),
         Probe("health", "GET", "/api/health", False, (200,),
-              notes="Shipped 2026-09-15 (asked for in bug report ask #2). No "
+              notes="Shipped 2026-09-15 (asked for in the 2026-05-29 "
+                    "outage disclosure, finding #1). No "
                     "key, checks the database answers, 200 with "
                     '{"ok":true,"db":true,"time":...} or 503 if the database '
                     "is down. Sends no-store, so a cached healthy answer "
