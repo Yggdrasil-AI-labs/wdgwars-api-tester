@@ -10,6 +10,7 @@ from __future__ import annotations
 import unittest
 
 from wdgwars_api_tester import (
+    EXPECTED_NONOK,
     Result,
     SENTINEL_PROBES,
     TELEGRAM_DELTA_LIMIT,
@@ -903,7 +904,64 @@ class TestUploadCsvNoIngestCapability(unittest.TestCase):
                body_md5="deadbeef"),
         ]
         annotate_verdicts(results)
-        self.assertEqual(results[0].verdict, "400")
+        # EXPECTED since v0.14.0: the 400 is the documented pass condition
+        # for this probe, so it is labeled as such rather than as a bare
+        # status. Still non-failing, which is what this test guards.
+        self.assertEqual(results[0].verdict, "EXPECTED")
+
+
+class TestExpectedNonOk(unittest.TestCase):
+    """Documented-correct non-2xx answers must not read as faults.
+
+    LOCOSP confirmed on 2026-09-15 that /api/team/me 404s and both
+    /api/team/messages probes 403 for an account that is in no gang, and
+    that /api/ itself has never been a bound route. Before this, the
+    /api/ 404 matched the sentinel fingerprint and held the board at
+    DEGRADED permanently, which trained the alert to be ignored.
+    """
+
+    def test_api_root_404_is_expected_not_dead(self):
+        sentinel = "5a2bce9d" * 4
+        results = [
+            _r("api-sentinel-404-a", status=404, body_md5=sentinel),
+            _r("api-sentinel-404-b", status=404, body_md5=sentinel),
+            _r("api-sentinel-404-c", status=404, body_md5=sentinel),
+            _r("api-root", status=404, body_md5=sentinel),
+        ]
+        annotate_verdicts(results)
+        by = {r.probe: r.verdict for r in results}
+        self.assertEqual(by["api-root"], "EXPECTED")
+        self.assertEqual(summary(results)["overall"], "HEALTHY")
+
+    def test_gang_endpoints_without_a_team_are_expected(self):
+        results = [
+            _r("team-me", auth="valid", status=404, body_md5="aaa"),
+            _r("team-messages", auth="valid", status=403, body_md5="bbb"),
+            _r("team-messages-id", auth="valid", status=403, body_md5="ccc"),
+        ]
+        annotate_verdicts(results)
+        self.assertEqual([r.verdict for r in results],
+                         ["EXPECTED", "EXPECTED", "EXPECTED"])
+        self.assertEqual(summary(results)["overall"], "HEALTHY")
+
+    def test_only_the_listed_status_is_expected(self):
+        # A different failure on the same probe must still surface.
+        results = [_r("team-me", auth="valid", status=500, body_md5="ddd")]
+        annotate_verdicts(results)
+        self.assertEqual(results[0].verdict, "500")
+
+    def test_expected_never_suppresses_a_leak(self):
+        results = [_r("api-root", status=404, body_md5="eee",
+                      leak_marker="lsphp_processes")]
+        annotate_verdicts(results)
+        self.assertEqual(results[0].verdict, "LEAK")
+
+    def test_health_probe_no_longer_accepts_404(self):
+        health = [p for p in build_probes() if p.name == "health"]
+        self.assertEqual(len(health), 1)
+        self.assertEqual(health[0].expect_status, (200,))
+        self.assertFalse(health[0].needs_auth)
+        self.assertNotIn(("health", 404), EXPECTED_NONOK)
 
 
 if __name__ == "__main__":

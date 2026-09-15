@@ -351,8 +351,8 @@ def build_mod_probes(username: Optional[str] = None,
     """Probes for the three proposed mod endpoints.
 
     ``expect_status`` includes 404 on purpose. Until the endpoints are
-    deployed, 404 IS the correct healthy answer, exactly like the existing
-    ``health-asked-for`` probe. That means this suite can be committed and run
+    deployed, 404 IS the correct healthy answer, exactly like the
+    ``health`` probe did before /api/health shipped. That means this suite can be committed and run
     today without producing false alarms, and it flips to meaningful the moment
     an implementation lands.
 

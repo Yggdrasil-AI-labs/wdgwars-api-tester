@@ -113,9 +113,9 @@ If no key is found, the `valid` variant is dropped automatically and only the
 | `member-territories-zoom-skip` | GET | `/api/member-territories?zoom=5` | yes | Low-zoom cell-skip variant. |
 | `leaderboard` | GET | `/api/leaderboard` | yes | 5 boards. 5-min snapshot. |
 | `bounties` | GET | `/api/bounties` | yes | Open bounties (max 200). Was 404 from 2026-06-03 onwards on the same regex-cascade bug as the original five handlers; fixed 2026-06-04. |
-| `team-messages` | GET | `/api/team/messages` | yes | Caller's gang messages list. |
-| `team-messages-id` | GET | `/api/team/messages/1` | yes | DELETE-only per spec. GET → 405 + `Allow: DELETE` post-2026-06-04. Healthy state is the METHOD verdict. |
-| `health-asked-for` | GET | `/api/health` | no | Doesn't exist yet. Asked for in bug #1. |
+| `team-messages` | GET | `/api/team/messages` | yes | Caller's gang messages list. 403 for an account in no gang is EXPECTED. |
+| `team-messages-id` | GET | `/api/team/messages/1` | yes | DELETE-only per spec. GET → 405 + `Allow: DELETE` post-2026-06-04. Healthy state is the METHOD verdict. 403 for an account in no gang is EXPECTED. |
+| `health` | GET | `/api/health` | no | Shipped 2026-09-15 (asked for in bug #1). Keyless DB liveness check: 200 `{ok,db,time}` or 503 if the database is down, `no-store`. 404 would mean a regression. |
 | `stats-leak-check` | GET | `/api/stats` | no | Fires LEAK if body carries the LSWS admin-telemetry fingerprint. (locosp's 2026-05-30 fix landed, endpoint now 302s to login; rule tightened in v0.6.1 to detect content, not just status.) |
 | `api-sentinel-404-a/b/c` | GET | `/api/<random>` × 3 | no | Quorum fingerprint of the /api/ 404 page (2-of-3 majority required). |
 | `non-api-sentinel-404` | GET | `/<random>` | no | Fingerprints the non-/api/ 404 page. |
@@ -167,6 +167,7 @@ python3 wdgwars_api_tester.py --variants valid
 | `DEAD-NONAPI` | Body matches the non-/api/ 404 sentinel. |
 | `LEAK` | Body carries the LiteSpeed admin-telemetry fingerprint (`lsphp_processes` / `top_domains` / `lsphp`). Generalized in v0.6.1. Fires on any probe, not just `stats-leak-check`. Tightened from "stats returned 200" because the bare-status rule false-positived once locosp's 2026-05-30 fix landed and `/api/stats` started 302ing to `/login`. |
 | `INGEST-UNEXPECTED` | `upload-csv` or `v2-upload-csv` returned a success status for the tool's deliberately schema-invalid body. This tool has no ingest capability; a success here means the server accepted a body it should have rejected. Never `OK`. |
+| `EXPECTED` | A non-2xx status this specific probe is supposed to get, listed in `EXPECTED_NONOK` with its reason (e.g. `/api/` 404, the three gang endpoints answering 404/403 for an account in no gang, the upload probes' 400 rejections). Never escalates to DEGRADED. |
 | `404` | 404 response but body distinct from sentinels. |
 | `METHOD` | 405. Healthy endpoint, wrong verb. |
 | `ERROR` | Network/timeout/URL error. |

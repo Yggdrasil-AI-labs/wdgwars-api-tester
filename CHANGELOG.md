@@ -5,6 +5,44 @@ All notable changes to `wdgwars-api-tester`.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-09-15 - EXPECTED verdict, /api/health is live
+
+LOCOSP answered the bug-report sweep in DMs on 2026-09-15: `/api/health`
+shipped, the `member-territories?compact=1` 500 is fixed, and the rest of
+what was holding the board at DEGRADED is the API behaving correctly for a
+probe account that is in no gang.
+
+### Added
+
+- **`EXPECTED` verdict** plus an `EXPECTED_NONOK` table mapping
+  (probe, status) to the reason that answer is correct. It is checked
+  ahead of the sentinel comparison, so a correct 404 whose body is the
+  site 404 page no longer reads as `DEAD`. Never escalates to DEGRADED,
+  never fires an alert. Deliberately an explicit opt-in list rather than
+  "status in `expect_status`", so a future regression cannot hide behind
+  a permissive expect tuple.
+  - `api-root` 404: `/api/` has never been a bound route. This single
+    verdict was holding the board at DEGRADED permanently.
+  - `team-me` 404, `team-messages` 403, `team-messages-id` 403: what an
+    account in no gang gets. Put the probe account in any gang and they
+    become 200s.
+  - `upload-csv` / `v2-upload-csv` 400: the deliberately schema-invalid
+    body being rejected, which is the probe passing.
+
+### Changed
+
+- `health-asked-for` is now `health`, and expects `(200,)` only. The
+  endpoint exists as of 2026-09-15: keyless, checks the database answers,
+  200 `{"ok":true,"db":true,"time":...}` or 503 if the database is down,
+  `no-store` so a cached healthy answer cannot mask a dead origin. A 404
+  is no longer an accepted answer, it would mean the route regressed.
+- `team-me` / `team-messages` / `team-messages-id` expect tuples widened
+  to include the no-gang answers.
+- `member-territories-compact`: no code change. The 500 tracked for
+  several days was real, caused by the endpoint building the whole world
+  in memory with no bbox and dying in the encoder. Fixed server-side,
+  recovery logged 2026-09-15 10:03 UTC.
+
 ## [0.13.6] - 2026-08-12 - Ingest capability removed entirely
 
 ### Removed

@@ -180,7 +180,7 @@ class IntegrationTests(unittest.TestCase):
                             "territories", "member-territories",
                             "leaderboard", "bounties",
                             "team-messages", "team-messages-id",
-                            "health-asked-for", "stats-leak-check",
+                            "health", "stats-leak-check",
                             "non-api-sentinel-404", "changelog-control",
                             "api-sentinel-404-a", "api-sentinel-404-b",
                             "api-sentinel-404-c"):
@@ -554,7 +554,7 @@ class LiveTests(unittest.TestCase):
                             "territories", "member-territories",
                             "leaderboard", "bounties",
                             "team-messages", "team-messages-id",
-                            "health-asked-for", "stats-leak-check",
+                            "health", "stats-leak-check",
                             "non-api-sentinel-404", "changelog-control",
                             "api-sentinel-404-a", "api-sentinel-404-b",
                             "api-sentinel-404-c"):

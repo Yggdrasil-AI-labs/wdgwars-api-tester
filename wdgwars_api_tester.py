@@ -25,7 +25,7 @@ Quickstart:
 """
 from __future__ import annotations
 
-__version__ = "0.13.6"
+__version__ = "0.14.0"
 GITHUB_URL = "https://github.com/Yggdrasil-AI-labs/wdgwars-api-tester"
 
 import argparse
@@ -217,7 +217,12 @@ def build_probes(team_id: int = 1) -> list[Probe]:
               "verdict, not a pass.")
     return [
         Probe("api-root", "GET", "/api/", False, (200, 301, 302, 404),
-              notes="Used as baseline for /api/ subtree shape."),
+              notes="Used as baseline for /api/ subtree shape. The live 404 "
+                    "body is the site 404 page, i.e. the sentinel "
+                    "fingerprint, so this probe used to read DEAD and was "
+                    "the single verdict holding the board at DEGRADED. "
+                    "/api/ is not a bound route and never was, so 404 here "
+                    "is EXPECTED (see EXPECTED_NONOK)."),
         Probe("me", "GET", "/api/me", True, (200,),
               notes="Auth + identity. With no/garbage key expect 401, not 404. "
                     "Since 2026-06-03 the response also carries `your_rank` "
@@ -234,13 +239,16 @@ def build_probes(team_id: int = 1) -> list[Probe]:
                     "{id, name, color, rank, created_at, members[]}. The /me "
                     "variant currently 524s (origin timeout) post-CF-Transform "
                     "fix, see team-me probe."),
-        Probe("team-me", "GET", "/api/team/me", True, (200,),
+        Probe("team-me", "GET", "/api/team/me", True, (200, 404),
               notes="Caller's-own team dossier. Was 400 'usage' pre-2026-06-03, "
-                    "fix accepted both /api/ and /endpoint/ prefixes but "
-                    "/me variant now returns CF 524 (origin timeout). "
-                    "Probe accepts 200, a 524 surfaces as the verdict so "
-                    "the upstream bug stays visible until LOCOSP ships the "
-                    "/me-side fix."),
+                    "fix accepted both /api/ and /endpoint/ prefixes, then "
+                    "the /me variant returned CF 524 (origin timeout). "
+                    "As of 2026-09-15 it answers 404 for the probe account "
+                    "because that account is in no gang, which LOCOSP "
+                    "confirmed is the contract, so 404 is EXPECTED here "
+                    "(see EXPECTED_NONOK). Put the probe account in any gang "
+                    "and this becomes a 200. A 524 still surfaces as the "
+                    "verdict."),
         Probe("upload-history", "GET", "/api/upload-history?limit=5", True, (200,),
               notes="Added 2026-04-27 per /changelog."),
         upload_csv_probe,
@@ -287,16 +295,25 @@ def build_probes(team_id: int = 1) -> list[Probe]:
                     "REQUEST_URI regex bug in bounties.php (same cascade as "
                     "the original five handlers). Fixed 2026-06-04 ~10:00 ET; "
                     "200 is the post-fix healthy state."),
-        Probe("team-messages", "GET", "/api/team/messages", True, (200,),
-              notes="Caller's gang messages list. The bare-path read path."),
-        Probe("team-messages-id", "GET", "/api/team/messages/1", True, (405,),
+        Probe("team-messages", "GET", "/api/team/messages", True, (200, 403),
+              notes="Caller's gang messages list. The bare-path read path. "
+                    "403 for an account in no gang is the contract "
+                    "(LOCOSP, 2026-09-15) and is EXPECTED, not a fault."),
+        Probe("team-messages-id", "GET", "/api/team/messages/1", True, (405, 403),
               notes="Trailing /N is DELETE-only per spec at the top of "
                     "team_messages.php. Was silently dropping the id and "
                     "returning the gang list on GET pre-2026-06-04; now "
                     "returns 405 with `Allow: DELETE` (METHOD verdict, still "
                     "healthy). Operator-confirmed via the api-tester sweep."),
-        Probe("health-asked-for", "GET", "/api/health", False, (200, 404),
-              notes="Currently does not exist. Asked for in bug report ask #2."),
+        Probe("health", "GET", "/api/health", False, (200,),
+              notes="Shipped 2026-09-15 (asked for in bug report ask #2). No "
+                    "key, checks the database answers, 200 with "
+                    '{"ok":true,"db":true,"time":...} or 503 if the database '
+                    "is down. Sends no-store, so a cached healthy answer "
+                    "cannot mask a dead origin. Deliberately thin: no "
+                    "versions, host names or counts, because it is the one "
+                    "endpoint anyone can call unauthenticated. 404 is NOT "
+                    "accepted any more, it would mean the route regressed."),
         Probe("stats-leak-check", "GET", "/api/stats", False, (404,),
               notes="If 200, LiteSpeed admin telemetry is leaking through "
                     "the unbound /api/ prefix (shared-hosting tenant list, "
@@ -466,6 +483,35 @@ SENTINEL_PROBES = ("api-sentinel-404-a", "api-sentinel-404-b", "api-sentinel-404
 # anyway, that is a bug worth surfacing loudly, not a pass.
 UPLOAD_PROBES = ("upload-csv", "v2-upload-csv")
 
+# Non-2xx responses that are the API behaving correctly for THIS probe, not
+# faults. Keyed (probe name, status) -> reason. A match is verdict EXPECTED,
+# which never feeds DEGRADED and never fires an alert.
+#
+# Deliberately an explicit opt-in list rather than "status in
+# probe.expect_status": a blanket rule would let a future regression hide
+# behind a permissive expect tuple. Each entry below is a behavior LOCOSP
+# confirmed in writing on 2026-09-15 after the bug-report sweep.
+#
+# The three team entries are what an account that is not in a gang gets.
+# Putting the probe account in any gang would turn them into 200s instead;
+# until then the correct answer for the board is "expected", not "broken".
+EXPECTED_NONOK = {
+    ("api-root", 404): "/api/ has never been a bound route. The 404 page it "
+                       "returns IS the sentinel body, so the DEAD match here "
+                       "is the fingerprint working, not a dead endpoint.",
+    ("team-me", 404): "Probe account is not in a gang. 404 is the documented "
+                      "answer for /api/team/me with no team (LOCOSP, "
+                      "2026-09-15).",
+    ("team-messages", 403): "Probe account is not in a gang, so it may not "
+                            "read gang messages (LOCOSP, 2026-09-15).",
+    ("team-messages-id", 403): "Same gang-membership gate as team-messages; "
+                               "the 403 lands before the DELETE-only 405.",
+    ("upload-csv", 400): "The tool's deliberately schema-invalid body being "
+                         "rejected. This is the probe passing.",
+    ("v2-upload-csv", 400): "Same schema-invalid body as upload-csv. "
+                            "Rejection is the pass condition.",
+}
+
 
 def _canonical_sentinel(results: list[Result], host: str) -> tuple[str, str]:
     """Quorum-pick the canonical /api/ 404 fingerprint for one host.
@@ -533,6 +579,12 @@ def annotate_verdicts(results: list[Result]) -> None:
         if r.probe in UPLOAD_PROBES and 200 <= r.status < 300:
             r.verdict = "INGEST-UNEXPECTED"
             continue
+        # Documented-correct non-2xx answers for this specific probe. Checked
+        # ahead of the sentinel comparison so a correct 404 whose body happens
+        # to be the site 404 page (api-root) doesn't read as DEAD.
+        if (r.probe, r.status) in EXPECTED_NONOK:
+            r.verdict = "EXPECTED"
+            continue
         api_md5, quorum_status = canonical.get(r.host, ("", "no-data"))
         nas = non_api_sentinels.get(r.host, "")
 
@@ -591,7 +643,7 @@ VERDICT_PRIORITY = {
     "DEAD": 3, "DEAD-NONAPI": 4,
     "SENTINEL-OUTLIER": 5, "404": 6, "METHOD": 7, "PAYLOAD-TOO-LARGE": 7,
     "REDIRECT-301": 8, "REDIRECT-303": 8, "REDIRECT-307": 8, "REDIRECT-308": 8,
-    "AUTH-REQUIRED": 9, "AUTH-REDIRECT": 10, "OK": 11,
+    "AUTH-REQUIRED": 9, "AUTH-REDIRECT": 10, "OK": 11, "EXPECTED": 11,
     "BLOCKED": 12, "SENTINEL": 13, "SENTINEL-NONAPI": 14,
 }
 
